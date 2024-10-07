@@ -404,6 +404,9 @@ extern MPSolverInterface* BuildGurobiInterface(bool mip,
 #if defined(USE_CPLEX)
 extern MPSolverInterface* BuildCplexInterface(bool mip, MPSolver* const solver);
 #endif
+#if defined(USE_MOSEK)
+extern MPSolverInterface* BuildMosekInterface(bool mip, MPSolver* const solver);
+#endif
 extern MPSolverInterface* BuildXpressInterface(bool mip,
                                                MPSolver* const solver);
 
@@ -458,6 +461,12 @@ MPSolverInterface* BuildSolverInterface(MPSolver* const solver) {
       return BuildCplexInterface(false, solver);
     case MPSolver::CPLEX_MIXED_INTEGER_PROGRAMMING:
       return BuildCplexInterface(true, solver);
+#endif
+#if defined(USE_MOSEK)
+    case MPSolver::MOSEK_LINEAR_PROGRAMMING:
+      return BuildMosekInterface(false, solver);
+    case MPSolver::MOSEK_MIXED_INTEGER_PROGRAMMING:
+      return BuildMosekInterface(true, solver);
 #endif
     case MPSolver::XPRESS_MIXED_INTEGER_PROGRAMMING:
       return BuildXpressInterface(true, solver);

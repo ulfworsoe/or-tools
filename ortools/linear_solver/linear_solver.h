@@ -889,6 +889,7 @@ class MPSolver {
   friend class CBCInterface;
   friend class SCIPInterface;
   friend class GurobiInterface;
+  friend class MosekInterface;
   friend class CplexInterface;
   friend class XpressInterface;
   friend class SLMInterface;
