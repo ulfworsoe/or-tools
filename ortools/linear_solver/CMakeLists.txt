@@ -31,7 +31,8 @@ set_target_properties(${NAME} PROPERTIES
   )
 target_include_directories(${NAME} PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
-  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>)
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
+  $<$<BOOL:${USE_MOSEK}>:${MOSEK_PLATFORM_DIR}/h>)
 target_link_libraries(${NAME} PRIVATE
   absl::memory
   absl::strings
@@ -50,9 +51,8 @@ target_link_libraries(${NAME} PRIVATE
 #add_library(${PROJECT_NAMESPACE}::linear_solver ALIAS ${NAME})
 
 link_directories(${NAME} 
-    $<$<BOOL:${USE_MOSEK}>:${MOSEK_BINDIR}>
+    $<$<BOOL:${USE_MOSEK}>:${MOSEK_PLATFORM_DIR}/bin>
 )
-
 # solve
 add_executable(solve)
 target_sources(solve PRIVATE "solve.cc")
