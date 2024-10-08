@@ -49,7 +49,7 @@ target_link_libraries(${NAME} PRIVATE
   ${PROJECT_NAMESPACE}::ortools_proto)
 #add_library(${PROJECT_NAMESPACE}::linear_solver ALIAS ${NAME})
 
-link_libraries(${NAME} PUBLIC
+link_directories(${NAME} 
     $<$<BOOL:${USE_MOSEK}>:${MOSEK_BINDIR}>
 )
 
