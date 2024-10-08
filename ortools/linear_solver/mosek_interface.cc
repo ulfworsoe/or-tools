@@ -14,6 +14,7 @@
 // Mosek backend to MPSolver.
 //
 #include <strings.h>
+#include <string_view>
 #if defined(USE_MOSEK)
 
 #include <algorithm>
@@ -29,9 +30,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/base/attributes.h"
-#include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/flags/flag.h"
 #include "absl/log/check.h"
 #include "absl/log/die_if_null.h"
@@ -43,21 +41,17 @@
 #include "ortools/base/timer.h"
 #include "ortools/linear_solver/linear_solver.h"
 #include "ortools/linear_solver/linear_solver_callback.h"
-//#include "ortools/linear_solver/proto_solver/gurobi_proto_solver.h"
 #include "ortools/linear_solver/proto_solver/proto_utils.h"
 #include "ortools/util/lazy_mutable_copy.h"
 #include "ortools/util/time_limit.h"
 
 #include "mosek.h"
 
-ABSL_FLAG(int, num_mosek_threads, 0,
-          "Number of threads available for Mosek.");
-
 namespace operations_research {
 
   class MosekInterface : public MPSolverInterface {
-   public:
-    // Constructor that takes a name for the underlying GRB solver.
+  public:
+
     explicit MosekInterface(MPSolver* solver, bool mip);
     ~MosekInterface() override;
 
@@ -162,59 +156,11 @@ namespace operations_research {
   bool SupportsCallbacks() const override { return true; }
 
  private:
-//  // Sets all parameters in the underlying solver.
-//  void SetParameters(const MPSolverParameters& param) override;
-//  // Sets solver-specific parameters (avoiding using files). The previous
-//  // implementations supported multi-line strings of the form:
-//  // parameter_i value_i\n
-//  // We extend support for strings of the form:
-//  // parameter1=value1,....,parametern=valuen
-//  // or for strings of the form:
-//  // parameter1 value1, ... ,parametern valuen
-//  // which are easier to set in the command line.
-//  // This implementations relies on SetSolverSpecificParameters, which has the
-//  // extra benefit of unifying the way we handle specific parameters for both
-//  // proto-based solves and for MPModel solves.
-//  bool SetSolverSpecificParametersAsString(
-//      const std::string& parameters) override;
-//  // Sets each parameter in the underlying solver.
-//  void SetRelativeMipGap(double value) override;
-//  void SetPrimalTolerance(double value) override;
-//  void SetDualTolerance(double value) override;
-//  void SetPresolveMode(int value) override;
-//  void SetScalingMode(int value) override;
-//  void SetLpAlgorithm(int value) override;
-//
-//  //MPSolver::BasisStatus TransformGRBVarBasisStatus(
-//  //    int gurobi_basis_status) const;
-//  //MPSolver::BasisStatus TransformGRBConstraintBasisStatus(
-//  //    int gurobi_basis_status, int constraint_index) const;
-//
-//  // See the implementation note at the top of file on incrementalism.
-//  //bool ModelIsNonincremental() const;
-//
-//  void SetIntAttr(const char* name, int value);
-//  int GetIntAttr(const char* name) const;
-//  void SetDoubleAttr(const char* name, double value);
-//  double GetDoubleAttr(const char* name) const;
-//  void SetIntAttrElement(const char* name, int index, int value);
-//  int GetIntAttrElement(const char* name, int index) const;
-//  void SetDoubleAttrElement(const char* name, int index, double value);
-//  double GetDoubleAttrElement(const char* name, int index) const;
-//  std::vector<double> GetDoubleAttrArray(const char* name, int elements);
-//  void SetCharAttrElement(const char* name, int index, char value);
-//  char GetCharAttrElement(const char* name, int index) const;
-
   static MSKboundkeye bk_from_bounds(double lb, double ub);
 
   void CheckedMosekCall(MSKrescodee r) const;
 
-//  int SolutionCount() const;
-
-
-
   //----- Variables -----
-
 
   // The underlying MOSEK task, which is kept updated with all Add* calls.
   MSKtask_t task_;
@@ -273,13 +219,8 @@ bool MosekInterface::InterruptSolve() {
   return true;
 }
 
-// For interacting directly with the Mosek C API for callbacks.
-struct MosekInternalCallbackContext {
-  GRBmodel* model;
-  void* gurobi_internal_callback_data;
-  int where;
-};
-
+// This class provides a means of interacting with the task from the callback
+// function.
 class MosekMPCallbackContext : public MPCallbackContext {
  public:
   MosekMPCallbackContext(MSKtask_t task)
@@ -290,86 +231,31 @@ class MosekMPCallbackContext : public MPCallbackContext {
   double VariableValue(const MPVariable* variable) override;
   void AddCut(const LinearRange& cutting_plane) override;
   void AddLazyConstraint(const LinearRange& lazy_constraint) override;
-  double SuggestSolution(
-      const absl::flat_hash_map<const MPVariable*, double>& solution) override;
+  double SuggestSolution(const absl::flat_hash_map<const MPVariable*, double>& solution) override;
   int64_t NumExploredNodes() override;
 
-  // Call this method to update the internal state of the callback context
-  // before passing it to MPCallback::RunCallback().
-  void UpdateFromMosekState(
-      const MosekInternalCallbackContext& mosek_internal_context);
-
  private:
-  template <typename T>
-  T MosekCallbackGet(
-      const MosekInternalCallbackContext& mosek_internal_context,
-      int callback_code);
-
-  // Stateful, updated before each call to the callback.
-  MosekInternalCallbackContext current_mosek_internal_callback_context_;
+  // current event
+  MPCallbackEvent ev;
+  // current message if the current event is kMessage
+  const char * msg;
   std::vector<double> mosek_variable_values_;
 };
 
-MosekMPCallbackContext::MosekMPCallbackContext(MSKtask_t task) : task(task) {}
-
-void MosekMPCallbackContext::UpdateFromMosekState(
-    const MosekInternalCallbackContext& mosek_internal_context) {
-  current_mosek_internal_callback_context_ = mosek_internal_context;
+MosekMPCallbackContext::MosekMPCallbackContext(MSKtask_t task) : task(task) {
+  int numvar; MSK_getnumvar(task,&numvar);
+  mosek_variables_values_.resize(numvar);
 }
 
 int64_t MosekMPCallbackContext::NumExploredNodes() {
-  switch (Event()) {
-    case MPCallbackEvent::kMipNode:
-      return static_cast<int64_t>(MosekCallbackGet<double>(
-          current_gurobi_internal_callback_context_, GRB_CB_MIPNODE_NODCNT));
-    case MPCallbackEvent::kMipSolution:
-      return static_cast<int64_t>(MosekCallbackGet<double>(
-          current_gurobi_internal_callback_context_, GRB_CB_MIPSOL_NODCNT));
-    default:
-      LOG(FATAL) << "Node count is supported only for callback events MIP_NODE "
-                    "and MIP_SOL, but was requested at: "
-                 << ToString(Event());
-  }
-}
+  int nnodes;
+  MSK_getintinf(task,MSK_IINF_MIO_NUM_SOLVED_NODES,&nnodes);
 
-template <typename T>
-T MosekMPCallbackContext::MosekCallbackGet(
-    const MosekInternalCallbackContext& gurobi_internal_context,
-    const int callback_code) {
-  T result = 0;
-  CheckedMosekCall(
-      GRBcbget(gurobi_internal_context.gurobi_internal_callback_data,
-               gurobi_internal_context.where, callback_code,
-               static_cast<void*>(&result)));
-  return result;
+  return nnodes;
 }
 
 MPCallbackEvent MosekMPCallbackContext::Event() {
-  switch (current_gurobi_internal_callback_context_.where) {
-    case GRB_CB_POLLING:
-      return MPCallbackEvent::kPolling;
-    case GRB_CB_PRESOLVE:
-      return MPCallbackEvent::kPresolve;
-    case GRB_CB_SIMPLEX:
-      return MPCallbackEvent::kSimplex;
-    case GRB_CB_MIP:
-      return MPCallbackEvent::kMip;
-    case GRB_CB_MIPSOL:
-      return MPCallbackEvent::kMipSolution;
-    case GRB_CB_MIPNODE:
-      return MPCallbackEvent::kMipNode;
-    case GRB_CB_MESSAGE:
-      return MPCallbackEvent::kMessage;
-    case GRB_CB_BARRIER:
-      return MPCallbackEvent::kBarrier;
-      // TODO(b/112427356): in Mosek 8.0, there is a new callback location.
-      // case GRB_CB_MULTIOBJ:
-      //   return MPCallbackEvent::kMultiObj;
-    default:
-      LOG_FIRST_N(ERROR, 1) << "Mosek callback at unknown where="
-                            << current_gurobi_internal_callback_context_.where;
-      return MPCallbackEvent::kUnknown;
-  }
+  return ev;
 }
 
 bool MosekMPCallbackContext::CanQueryVariableValues() {
@@ -377,110 +263,25 @@ bool MosekMPCallbackContext::CanQueryVariableValues() {
   if (where == MPCallbackEvent::kMipSolution) {
     return true;
   }
-  if (where == MPCallbackEvent::kMipNode) {
-    const int gurobi_node_status = MosekCallbackGet<int>(
-        current_gurobi_internal_callback_context_, GRB_CB_MIPNODE_STATUS);
-    return gurobi_node_status == GRB_OPTIMAL;
-  }
   return false;
 }
 
 double MosekMPCallbackContext::VariableValue(const MPVariable* variable) {
   CHECK(variable != nullptr);
-  if (!variable_values_extracted_) {
-    const MPCallbackEvent where = Event();
-    CHECK(where == MPCallbackEvent::kMipSolution ||
-          where == MPCallbackEvent::kMipNode)
-        << "You can only call VariableValue at "
-        << ToString(MPCallbackEvent::kMipSolution) << " or "
-        << ToString(MPCallbackEvent::kMipNode)
-        << " but called from: " << ToString(where);
-    const int gurobi_get_var_param = where == MPCallbackEvent::kMipNode
-                                         ? GRB_CB_MIPNODE_REL
-                                         : GRB_CB_MIPSOL_SOL;
-
-    gurobi_variable_values_.resize(num_gurobi_vars_);
-    CheckedMosekCall(GRBcbget(
-        current_gurobi_internal_callback_context_.gurobi_internal_callback_data,
-        current_gurobi_internal_callback_context_.where, gurobi_get_var_param,
-        static_cast<void*>(gurobi_variable_values_.data())));
-    variable_values_extracted_ = true;
-  }
-  return gurobi_variable_values_[mp_var_to_gurobi_var_->at(variable->index())];
+  CHECK(ev == MPCallbackEvent::kMipSolution ||
+        ev == MPCallbackEvent::kMipNode)
+      << "You can only call VariableValue at "
+      << ToString(MPCallbackEvent::kMipSolution) << " or "
+      << ToString(MPCallbackEvent::kMipNode)
+      << " but called from: " << ToString(ev);
+  return mosek_variable_values_[variable->index()];
 }
 
-template <typename GRBConstraintFunction>
-void MosekMPCallbackContext::AddGeneratedConstraint(
-    const LinearRange& linear_range,
-    GRBConstraintFunction grb_constraint_function) {
-  std::vector<int> variable_indices;
-  std::vector<double> variable_coefficients;
-  const int num_terms = linear_range.linear_expr().terms().size();
-  variable_indices.reserve(num_terms);
-  variable_coefficients.reserve(num_terms);
-  for (const auto& var_coef_pair : linear_range.linear_expr().terms()) {
-    variable_indices.push_back(
-        mp_var_to_gurobi_var_->at(var_coef_pair.first->index()));
-    variable_coefficients.push_back(var_coef_pair.second);
-  }
-  if (std::isfinite(linear_range.upper_bound())) {
-    CheckedMosekCall(grb_constraint_function(
-        current_gurobi_internal_callback_context_.gurobi_internal_callback_data,
-        variable_indices.size(), variable_indices.data(),
-        variable_coefficients.data(), GRB_LESS_EQUAL,
-        linear_range.upper_bound()));
-  }
-  if (std::isfinite(linear_range.lower_bound())) {
-    CheckedMosekCall(grb_constraint_function(
-        current_gurobi_internal_callback_context_.gurobi_internal_callback_data,
-        variable_indices.size(), variable_indices.data(),
-        variable_coefficients.data(), GRB_GREATER_EQUAL,
-        linear_range.lower_bound()));
-  }
-}
+void MosekMPCallbackContext::AddCut(const LinearRange& cutting_plane) { } 
+void MosekMPCallbackContext::AddLazyConstraint( const LinearRange& lazy_constraint) { }
 
-void MosekMPCallbackContext::AddCut(const LinearRange& cutting_plane) {
-  CHECK(might_add_cuts_);
-  const MPCallbackEvent where = Event();
-  CHECK(where == MPCallbackEvent::kMipNode)
-      << "Cuts can only be added at MIP_NODE, tried to add cut at: "
-      << ToString(where);
-  AddGeneratedConstraint(cutting_plane, GRBcbcut);
-}
-
-void MosekMPCallbackContext::AddLazyConstraint(
-    const LinearRange& lazy_constraint) {
-  CHECK(might_add_lazy_constraints_);
-  const MPCallbackEvent where = Event();
-  CHECK(where == MPCallbackEvent::kMipNode ||
-        where == MPCallbackEvent::kMipSolution)
-      << "Lazy constraints can only be added at MIP_NODE or MIP_SOL, tried to "
-         "add lazy constraint at: "
-      << ToString(where);
-  AddGeneratedConstraint(lazy_constraint, GRBcblazy);
-}
-
-double MosekMPCallbackContext::SuggestSolution(
-    const absl::flat_hash_map<const MPVariable*, double>& solution) {
-  const MPCallbackEvent where = Event();
-  CHECK(where == MPCallbackEvent::kMipNode)
-      << "Feasible solutions can only be added at MIP_NODE, tried to add "
-         "solution at: "
-      << ToString(where);
-
-  std::vector<double> full_solution(num_gurobi_vars_, GRB_UNDEFINED);
-  for (const auto& variable_value : solution) {
-    const MPVariable* var = variable_value.first;
-    full_solution[mp_var_to_gurobi_var_->at(var->index())] =
-        variable_value.second;
-  }
-
-  double objval;
-  CheckedMosekCall(GRBcbsolution(
-      current_gurobi_internal_callback_context_.gurobi_internal_callback_data,
-      full_solution.data(), &objval));
-
-  return objval;
+double MosekMPCallbackContext::SuggestSolution(const absl::flat_hash_map<const MPVariable*, double>& solution) {
+  return 0;
 }
 
 struct MPCallbackWithMosekContext {
@@ -489,21 +290,242 @@ struct MPCallbackWithMosekContext {
   bool * break_solver;
 };
 
+
+int MSKCALL StreamCallbackImpl(
+    MSKuserhandle_t h,
+    const char * msg) {
+  
+  MPCallbackWithMosekContext* const callback_with_context = 
+      static_cast<MPCallbackWithMosekContext*>(h);
+
+  CHECK(callback_with_context != nullptr);
+  CHECK(callback_with_context->context != nullptr);
+  callback_with_context->ev = MPCallbackEvent::kMessage;
+  callback_with_context->msg = msg;
+  
+  callback_with_context->callback->RunCallback(callback_with_context->context);
+
+  callback_with_context->msg = nullptr;
+}
+
 // NOTE(user): This function must have this exact API, because we are passing
 // it to Mosek as a callback.
 int MSKCALL CallbackImpl(MSKtask_t task,
                          MSKuserhandle_t h,
                          MSKcallbackcodee where,
-                         const double * dinf,
-                         const int    * iinf,
+                         const double  * dinf,
+                         const int     * iinf,
                          const int64_t * liinf) {
 
   MPCallbackWithMosekContext* const callback_with_context = 
       static_cast<MPCallbackWithMosekContext*>(h);
   CHECK(callback_with_context != nullptr);
   CHECK(callback_with_context->context != nullptr);
-  //MosekInternalCallbackContext mosek_internal_context{ task, gurobi_internal_callback_data, where};
-  callback_with_context->context->UpdateFromMosekState(gurobi_internal_context);
+
+  //  kUnknown,
+  //  // For regaining control of the main thread in single threaded applications,
+  //  // not for interacting with the solver.
+  //  kPolling,
+  //  // The solver is currently running presolve.
+  //  kPresolve,
+  //  // The solver is currently running the simplex method.
+  //  kSimplex,
+  //  // The solver is in the MIP loop (called periodically before starting a new
+  //  // node).  Useful to early termination.
+  //  kMip,
+  //  // Called every time a new MIP incumbent is found.
+  //  kMipSolution,
+  //  // Called once per pass of the cut loop inside each MIP node.
+  //  kMipNode,
+  //  // Called in each iterate of IPM/barrier method.
+  //  kBarrier,
+  //  // The solver is about to log out a message, use this callback to capture it.
+  //  kMessage,
+  //  // The solver is in multi-objective optimization.
+  //  kMultiObj,
+
+  switch (where) {
+    // The callback function is called after a new integer solution has been located by the mixed-integer optimizer.
+    case MSK_CALLBACK_NEW_INT_MIO:
+      MSK_getxx(task,mosek_variable_values_.data());
+      callback_with_context->ev = MPCallbackEvent::kMipSolution;
+      break;
+
+    case MSK_CALLBACK_BEGIN_DUAL_SIMPLEX:
+    case MSK_CALLBACK_BEGIN_DUAL_SIMPLEX_BI:
+    case MSK_CALLBACK_BEGIN_PRIMAL_SIMPLEX:
+    case MSK_CALLBACK_BEGIN_PRIMAL_SIMPLEX_BI:
+    case MSK_CALLBACK_END_DUAL_SIMPLEX:
+    case MSK_CALLBACK_END_DUAL_SIMPLEX_BI:
+    case MSK_CALLBACK_END_PRIMAL_SIMPLEX:
+    case MSK_CALLBACK_END_PRIMAL_SIMPLEX_BI:
+    case MSK_CALLBACK_IM_PRIMAL_SIMPLEX:
+    case MSK_CALLBACK_IM_SIMPLEX:
+    case MSK_CALLBACK_IM_SIMPLEX_BI:
+    case MSK_CALLBACK_PRIMAL_SIMPLEX:
+    case MSK_CALLBACK_UPDATE_DUAL_SIMPLEX:
+    case MSK_CALLBACK_UPDATE_DUAL_SIMPLEX_BI:
+    case MSK_CALLBACK_UPDATE_PRIMAL_SIMPLEX:
+    case MSK_CALLBACK_UPDATE_PRIMAL_SIMPLEX_BI:
+    case MSK_CALLBACK_UPDATE_SIMPLEX:
+      callback_with_context->ev = MPCallbackEvent::kSimplex;
+      break;
+
+    case MSK_CALLBACK_INTPNT:
+    case MSK_CALLBACK_BEGIN_CONIC:
+      callback_with_context->ev = MPCallbackEvent::kBarrier;
+      break;
+
+    case MSK_CALLBACK_BEGIN_PRESOLVE:
+      callback_with_context->ev = MPCallbackEvent::kPresolve;
+      break;
+
+    case MSK_CALLBACK_BEGIN_MIO:
+      callback_with_context->ev = MPCallbackEvent::kMip;
+      break;
+
+    // The callback function is called from within the basis identification procedure when the primal phase is started.
+    case MSK_CALLBACK_BEGIN_PRIMAL_BI:
+    // Begin primal feasibility repair.
+    case MSK_CALLBACK_BEGIN_PRIMAL_REPAIR:
+    // Primal sensitivity analysis is started.
+    case MSK_CALLBACK_BEGIN_PRIMAL_SENSITIVITY:
+    // The callback function is called when the primal BI setup is started.
+    case MSK_CALLBACK_BEGIN_PRIMAL_SETUP_BI:
+    // The basis identification procedure has been started.
+    case MSK_CALLBACK_BEGIN_BI:
+    // The callback function is called from within the basis identification procedure when the dual phase is started.
+    case MSK_CALLBACK_BEGIN_DUAL_BI:
+    // Dual sensitivity analysis is started.
+    case MSK_CALLBACK_BEGIN_DUAL_SENSITIVITY:
+    // The callback function is called when the dual BI phase is started.
+    case MSK_CALLBACK_BEGIN_DUAL_SETUP_BI:
+    // The callback function is called when the infeasibility analyzer is started.
+    case MSK_CALLBACK_BEGIN_INFEAS_ANA:
+    // The callback function is called when the interior-point optimizer is started.
+    case MSK_CALLBACK_BEGIN_INTPNT:
+    // Begin waiting for license.
+    case MSK_CALLBACK_BEGIN_LICENSE_WAIT:
+    // The callback function is called when the optimizer is started.
+    case MSK_CALLBACK_BEGIN_OPTIMIZER:
+    // Begin QCQO reformulation.
+    case MSK_CALLBACK_BEGIN_QCQO_REFORMULATE:
+    // The callback function is called when root cut generation is started.
+    case MSK_CALLBACK_BEGIN_ROOT_CUTGEN:
+    // The callback function is called when the simplex optimizer is started.
+    case MSK_CALLBACK_BEGIN_SIMPLEX:
+    // The callback function is called from within the basis identification procedure when the simplex clean-up phase is started.
+    case MSK_CALLBACK_BEGIN_SIMPLEX_BI:
+    // The callback function is called when solution of root relaxation is started.
+    case MSK_CALLBACK_BEGIN_SOLVE_ROOT_RELAX:
+    // Begin conic reformulation.
+    case MSK_CALLBACK_BEGIN_TO_CONIC:
+    // The callback function is called from within the conic optimizer after the information database has been updated.
+    case MSK_CALLBACK_CONIC:
+    // The callback function is called from within the dual simplex optimizer.
+    case MSK_CALLBACK_DUAL_SIMPLEX:
+    // The callback function is called when the basis identification procedure is terminated.
+    case MSK_CALLBACK_END_BI:
+    // The callback function is called when the conic optimizer is terminated.
+    case MSK_CALLBACK_END_CONIC:
+    // The callback function is called from within the basis identification procedure when the dual phase is terminated.
+    case MSK_CALLBACK_END_DUAL_BI:
+    // Dual sensitivity analysis is terminated.
+    case MSK_CALLBACK_END_DUAL_SENSITIVITY:
+    // The callback function is called when the dual BI phase is terminated.
+    case MSK_CALLBACK_END_DUAL_SETUP_BI:
+    // The callback function is called when the infeasibility analyzer is terminated.
+    case MSK_CALLBACK_END_INFEAS_ANA:
+    // The callback function is called when the interior-point optimizer is terminated.
+    case MSK_CALLBACK_END_INTPNT:
+    // End waiting for license.
+    case MSK_CALLBACK_END_LICENSE_WAIT:
+    // The callback function is called when the mixed-integer optimizer is terminated.
+    case MSK_CALLBACK_END_MIO:
+    // The callback function is called when the optimizer is terminated.
+    case MSK_CALLBACK_END_OPTIMIZER:
+    // The callback function is called when the presolve is completed.
+    case MSK_CALLBACK_END_PRESOLVE:
+    // The callback function is called from within the basis identification procedure when the primal phase is terminated.
+    case MSK_CALLBACK_END_PRIMAL_BI:
+    // End primal feasibility repair.
+    case MSK_CALLBACK_END_PRIMAL_REPAIR:
+    // Primal sensitivity analysis is terminated.
+    case MSK_CALLBACK_END_PRIMAL_SENSITIVITY:
+    // The callback function is called when the primal BI setup is terminated.
+    case MSK_CALLBACK_END_PRIMAL_SETUP_BI:
+    // End QCQO reformulation.
+    case MSK_CALLBACK_END_QCQO_REFORMULATE:
+    // The callback function is called when root cut generation is terminated.
+    case MSK_CALLBACK_END_ROOT_CUTGEN:
+    // The callback function is called when the simplex optimizer is terminated.
+    case MSK_CALLBACK_END_SIMPLEX:
+    // The callback function is called from within the basis identification procedure when the simplex clean-up phase is terminated.
+    case MSK_CALLBACK_END_SIMPLEX_BI:
+    // The callback function is called when solution of root relaxation is terminated.
+    case MSK_CALLBACK_END_SOLVE_ROOT_RELAX:
+    // End conic reformulation.
+    case MSK_CALLBACK_END_TO_CONIC:
+    // The callback function is called from within the basis identification procedure at an intermediate point.
+    case MSK_CALLBACK_IM_BI:
+    // The callback function is called at an intermediate stage within the conic optimizer where the information database has not been updated.
+    case MSK_CALLBACK_IM_CONIC:
+    // The callback function is called from within the basis identification procedure at an intermediate point in the dual phase.
+    case MSK_CALLBACK_IM_DUAL_BI:
+    // The callback function is called at an intermediate stage of the dual sensitivity analysis.
+    case MSK_CALLBACK_IM_DUAL_SENSIVITY:
+    // The callback function is called at an intermediate point in the dual simplex optimizer.
+    case MSK_CALLBACK_IM_DUAL_SIMPLEX:
+    // The callback function is called at an intermediate stage within the interior-point optimizer where the information database has not been updated.
+    case MSK_CALLBACK_IM_INTPNT:
+    // MOSEK is waiting for a license.
+    case MSK_CALLBACK_IM_LICENSE_WAIT:
+    // The callback function is called from within the LU factorization procedure at an intermediate point.
+    case MSK_CALLBACK_IM_LU:
+    // The callback function is called at an intermediate point in the mixed-integer optimizer.
+    case MSK_CALLBACK_IM_MIO:
+    // The callback function is called at an intermediate point in the mixed-integer optimizer while running the dual simplex optimizer.
+    case MSK_CALLBACK_IM_MIO_DUAL_SIMPLEX:
+    // The callback function is called at an intermediate point in the mixed-integer optimizer while running the interior-point optimizer.
+    case MSK_CALLBACK_IM_MIO_INTPNT:
+    // The callback function is called at an intermediate point in the mixed-integer optimizer while running the primal simplex optimizer.
+    case MSK_CALLBACK_IM_MIO_PRIMAL_SIMPLEX:
+    // The callback function is called from within the matrix ordering procedure at an intermediate point.
+    case MSK_CALLBACK_IM_ORDER:
+    // The callback function is called from within the presolve procedure at an intermediate stage.
+    case MSK_CALLBACK_IM_PRESOLVE:
+    // The callback function is called from within the basis identification procedure at an intermediate point in the primal phase.
+    case MSK_CALLBACK_IM_PRIMAL_BI:
+    // The callback function is called at an intermediate stage of the primal sensitivity analysis.
+    case MSK_CALLBACK_IM_PRIMAL_SENSIVITY:
+    // The callback function is called at an intermediate stage of the conic quadratic reformulation.
+    case MSK_CALLBACK_IM_QO_REFORMULATE:
+    // The callback is called from within root cut generation at an intermediate stage.
+    case MSK_CALLBACK_IM_ROOT_CUTGEN:
+    // The callback function is called when the mixed-integer optimizer is restarted. 
+    case MSK_CALLBACK_RESTART_MIO:
+    // The callback function is called while the task is being solved on a remote server.
+    case MSK_CALLBACK_SOLVING_REMOTE:
+    // The callback function is called from within the basis identification procedure at an intermediate point in the dual phase.
+    case MSK_CALLBACK_UPDATE_DUAL_BI:
+    // The callback function is called from within the presolve procedure.
+    case MSK_CALLBACK_UPDATE_PRESOLVE:
+    // The callback function is called from within the basis identification procedure at an intermediate point in the primal phase.
+    case MSK_CALLBACK_UPDATE_PRIMAL_BI:
+      callback_with_context->ev = MPCallbackEvent::kPolling;
+      break;
+    case MSK_CALLBACK_BEGIN_READ:
+    case MSK_CALLBACK_BEGIN_WRITE:
+    case MSK_CALLBACK_END_READ:
+    case MSK_CALLBACK_END_WRITE:
+    case MSK_CALLBACK_IM_READ:
+    case MSK_CALLBACK_READ_OPF:
+    case MSK_CALLBACK_READ_OPF_SECTION:
+    case MSK_CALLBACK_WRITE_OPF:
+      callback_with_context->ev = MPCallbackEvent::kUnknown;
+      break;
+  }
+
   callback_with_context->callback->RunCallback(callback_with_context->context);
   return *(callback_with_context->break_solver) ? 1 : 0;
 }
@@ -536,66 +558,6 @@ void MosekInterface::CheckedMosekCall(MSKrescodee r) const {
   ::operations_research::CheckedMosekCall(r, task_);
 }
 
-//void MosekInterface::SetIntAttr(const char* name, int value) {
-//  CheckedMosekCall(GRBsetintattr(model_, name, value));
-//}
-//
-//int MosekInterface::GetIntAttr(const char* name) const {
-//  int value;
-//  CheckedMosekCall(GRBgetintattr(model_, name, &value));
-//  return value;
-//}
-//
-//void MosekInterface::SetDoubleAttr(const char* name, double value) {
-//  CheckedMosekCall(GRBsetdblattr(model_, name, value));
-//}
-//
-//double MosekInterface::GetDoubleAttr(const char* name) const {
-//  double value;
-//  CheckedMosekCall(GRBgetdblattr(model_, name, &value));
-//  return value;
-//}
-//
-//void MosekInterface::SetIntAttrElement(const char* name, int index,
-//                                        int value) {
-//  CheckedMosekCall(GRBsetintattrelement(model_, name, index, value));
-//}
-//
-//int MosekInterface::GetIntAttrElement(const char* name, int index) const {
-//  int value;
-//  CheckedMosekCall(GRBgetintattrelement(model_, name, index, &value));
-//  return value;
-//}
-//
-//void MosekInterface::SetDoubleAttrElement(const char* name, int index,
-//                                           double value) {
-//  CheckedMosekCall(GRBsetdblattrelement(model_, name, index, value));
-//}
-//double MosekInterface::GetDoubleAttrElement(const char* name,
-//                                             int index) const {
-//  double value;
-//  CheckedMosekCall(GRBgetdblattrelement(model_, name, index, &value));
-//  return value;
-//}
-//
-//std::vector<double> MosekInterface::GetDoubleAttrArray(const char* name,
-//                                                        int elements) {
-//  std::vector<double> results(elements);
-//  CheckedMosekCall(
-//      GRBgetdblattrarray(model_, name, 0, elements, results.data()));
-//  return results;
-//}
-//
-//void MosekInterface::SetCharAttrElement(const char* name, int index,
-//                                         char value) {
-//  CheckedMosekCall(GRBsetcharattrelement(model_, name, index, value));
-//}
-//char MosekInterface::GetCharAttrElement(const char* name, int index) const {
-//  char value;
-//  CheckedMosekCall(GRBgetcharattrelement(model_, name, index, &value));
-//  return value;
-//}
-
 // Creates a LP/MIP instance with the specified name and minimization objective.
 MosekInterface::MosekInterface(MPSolver* const solver, bool mip)
     : MPSolverInterface(solver),    
@@ -609,12 +571,11 @@ MosekInterface::MosekInterface(MPSolver* const solver, bool mip)
   CheckedMosekCall(MSK_appendrzerodomain(task_,1,&domidx_rzero));
   CheckedMosekCall(MSK_appendrplusdomain(task_,1,&domidx_rplus));
   CheckedMosekCall(MSK_appendrminusdomain(task_,1,&domidx_rminus));
-  //CheckedMosekCall(
-  //    GRBsetintparam(GRBgetenv(model_), GRB_INT_PAR_OUTPUTFLAG, 0));
-  //TODO:
-  //CheckedMosekCall(GRBsetintparam(GRBgetenv(model_), GRB_INT_PAR_THREADS,
-  //                                 absl::GetFlag(FLAGS_num_gurobi_threads)));
 }
+
+
+
+
 
 MosekInterface::~MosekInterface() { }
 
@@ -634,9 +595,7 @@ MSKboundkeye MosekInterface::bk_from_bounds(double lb, double ub) {
 // ------ Model modifications and extraction -----
 
 void MosekInterface::Reset() {
-  // We hold calls to GRBterminate() until the new model_ is ready.
   const absl::MutexLock lock(&hold_interruptions_mutex_);
-
 
   decltype(ptask_) old_taskp(std::move(ptask_));
   MSKtask_t old_task = task_;
@@ -645,8 +604,6 @@ void MosekInterface::Reset() {
 
   mp_cons_to_mosek_cons_.clear();
 
-  // TODO Copy all parameters??
-  //CheckedMosekCall(GRBcopyparams(GRBgetenv(model_), GRBgetenv(old_model)));
   MosekCloneParameters(task_,old_task);
 
   ResetExtractionInformation();
@@ -871,59 +828,6 @@ int64_t MosekInterface::nodes() const {
   }
 }
 
-//MPSolver::BasisStatus MosekInterface::TransformGRBVarBasisStatus(
-//    int gurobi_basis_status) const {
-//  switch (gurobi_basis_status) {
-//    case GRB_BASIC:
-//      return MPSolver::BASIC;
-//    case GRB_NONBASIC_LOWER:
-//      return MPSolver::AT_LOWER_BOUND;
-//    case GRB_NONBASIC_UPPER:
-//      return MPSolver::AT_UPPER_BOUND;
-//    case GRB_SUPERBASIC:
-//      return MPSolver::FREE;
-//    default:
-//      LOG(DFATAL) << "Unknown GRB basis status.";
-//      return MPSolver::FREE;
-//  }
-//}
-
-//MPSolver::BasisStatus MosekInterface::TransformGRBConstraintBasisStatus(
-//    int gurobi_basis_status, int constraint_index) const {
-//  const int grb_index = mp_cons_to_gurobi_linear_cons_.at(constraint_index);
-//  if (grb_index < 0) {
-//    LOG(DFATAL) << "Basis status not available for nonlinear constraints.";
-//    return MPSolver::FREE;
-//  }
-//  switch (gurobi_basis_status) {
-//    case GRB_BASIC:
-//      return MPSolver::BASIC;
-//    default: {
-//      // Non basic.
-//      double tolerance = 0.0;
-//      CheckedMosekCall(GRBgetdblparam(GRBgetenv(model_),
-//                                       GRB_DBL_PAR_FEASIBILITYTOL, &tolerance));
-//      const double slack = GetDoubleAttrElement(GRB_DBL_ATTR_SLACK, grb_index);
-//      const char sense = GetCharAttrElement(GRB_CHAR_ATTR_SENSE, grb_index);
-//      VLOG(4) << "constraint " << constraint_index << " , slack = " << slack
-//              << " , sense = " << sense;
-//      if (fabs(slack) <= tolerance) {
-//        switch (sense) {
-//          case GRB_EQUAL:
-//          case GRB_LESS_EQUAL:
-//            return MPSolver::AT_UPPER_BOUND;
-//          case GRB_GREATER_EQUAL:
-//            return MPSolver::AT_LOWER_BOUND;
-//          default:
-//            return MPSolver::FREE;
-//        }
-//      } else {
-//        return MPSolver::FREE;
-//      }
-//    }
-//  }
-//}
-
 // Returns the basis status of a row.
 MPSolver::BasisStatus MosekInterface::row_status(int constraint_index) const {
   auto coni = mp_cons_to_mosek_cons_[constraint_index];
@@ -1058,28 +962,40 @@ void MosekInterface::SetParameters(const MPSolverParameters& param) {
 
 bool MosekInterface::SetSolverSpecificParametersAsString(
     const std::string& parameters) {
-  return SetSolverSpecificParameters(parameters, GRBgetenv(model_)).ok();
+
+  std::string_view data(parameters);
+  std::string key,value;
+  while (data.size() > 0) {
+    auto p = data.find('\n');
+    if (p == std::string_view::npos) p = data.size();
+    std::string_view line = data.substr(0,p);
+    
+    auto eq_pos = line.find('=');
+    if (eq_pos != std::string_view::npos) {
+      key.clear();
+      value.clear();
+      key += line.substr(0,eq_pos);
+      value += line.substr(eq_pos+1);
+
+      if (MSK_RES_OK != MSK_putparam(task,key.c_str(),value.c_str())) {
+        LOG(WARNING) << "Failed to set parameters '" << key << "' to '" << value << "'";
+      }
+    }
+
+    data = data.substr(p+1);
+  }
+  return true;
 }
 
 void MosekInterface::SetRelativeMipGap(double value) {
   CheckedMosekCall(MSK_putdouparam(task_,MSK_DPAR_MIO_REL_GAP_CONST,value));
 }
 
-// Mosek has two different types of primal tolerance (feasibility tolerance):
-// constraint and integrality. We need to set them both.
-// See:
-// http://www.gurobi.com/documentation/6.0/refman/feasibilitytol.html
-// and
-// http://www.gurobi.com/documentation/6.0/refman/intfeastol.html
 void MosekInterface::SetPrimalTolerance(double value) {
   CheckedMosekCall(MSK_putdparam(task_, MSK_DPAR_INTPNT_TOL_PFEAS));
   CheckedMosekCall(MSK_putdparam(task_, MSK_DPAR_BASIS_TOL_X));
 }
 
-// As opposed to primal (feasibility) tolerance, the dual (optimality) tolerance
-// applies only to the reduced costs in the improving direction.
-// See:
-// http://www.gurobi.com/documentation/6.0/refman/optimalitytol.html
 void MosekInterface::SetDualTolerance(double value) {
   CheckedMosekCall(MSK_putdparam(task_, MSK_DPAR_INTPNT_TOL_DFEAS));
   CheckedMosekCall(MSK_putdparam(task_, MSK_DPAR_BASIS_TOL_S));
@@ -1119,8 +1035,6 @@ void MosekInterface::SetScalingMode(int value) {
   }
 }
 
-// Sets the LP algorithm : primal, dual or barrier. Note that GRB
-// offers automatic selection
 void MosekInterface::SetLpAlgorithm(int value) {
   switch (value) {
     case MPSolverParameters::DUAL:
@@ -1155,7 +1069,6 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
 
   ExtractModel();
   // Sync solver.
-  CheckedMosekCall(GRBupdatemodel(model_));
   VLOG(1) << absl::StrFormat("Model built in %s.",
                              absl::FormatDuration(timer.GetDuration()));
 
@@ -1196,27 +1109,18 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
   // remove any pre-existing solution in task that are not relevant for the result.
   MSK_putintparam(task_,MSK_IPAR_REMOVE_UNUSED_SOLUTIONS,MSK_OK);
 
-  // Logs all parameters not at default values in the model environment.
-  // TODO
-  //if (!quiet()) {
-  //  std::cout << MosekParamInfoForLogging(GRBgetenv(model_),
-  //                                         /*one_liner_output=*/true);
-  //}
-
   // Solve
   timer.Restart();
 
   MSKrescodee trm;
   {
     MSK_putcallbackfunc(task_,CallbackImpl,&mp_callback_with_context);
+    MSK_linkfunctotaskstream(task_,MSK_STREAM_LOG,&mp_callback_with_context,StreamCallbackImpl);
     CheckedMosekCall(MSK_optimizetrm(task,&trm));
+    MSK_linkfunctotaskstream(task_,MSK_STREAM_LOG,nullptr,nullptr);
     MSK_putcallbackfunc(task_,nullptr,nullptr);
   }
 
-
-  //if (status) {
-  //  VLOG(1) << "Failed to optimize MIP." << GRBgeterrormsg(global_env_);
-  //} else {
   VLOG(1) << absl::StrFormat("Solved in %s.",
                              absl::FormatDuration(timer.GetDuration()));
   // Get the status.
@@ -1330,34 +1234,6 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
 // Select next solution and assign all solution values to variables.
 bool MosekInterface::NextSolution() {
   return false;
-  // Next solution only supported for MIP
-  if (!mip_) return false;
-
-  // Make sure we have successfully solved the problem and not modified it.
-  if (!CheckSolutionIsSynchronizedAndExists()) {
-    return false;
-  }
-  // Check if we are out of solutions.
-  if (current_solution_index_ + 1 >= SolutionCount()) {
-    return false;
-  }
-  current_solution_index_++;
-
-  CheckedMosekCall(GRBsetintparam(
-      GRBgetenv(model_), GRB_INT_PAR_SOLUTIONNUMBER, current_solution_index_));
-
-  objective_value_ = GetDoubleAttr(GRB_DBL_ATTR_POOLOBJVAL);
-  const std::vector<double> grb_variable_values =
-      GetDoubleAttrArray(GRB_DBL_ATTR_XN, num_gurobi_vars_);
-
-  for (int i = 0; i < solver_->variables_.size(); ++i) {
-    MPVariable* const var = solver_->variables_[i];
-    var->set_solution_value(
-        grb_variable_values.at(mp_var_to_gurobi_var_.at(i)));
-  }
-  // TODO(user): This reset may not be necessary, investigate.
-  GRBresetparams(GRBgetenv(model_));
-  return true;
 }
 
 void MosekInterface::Write(const std::string& filename) {
