@@ -103,7 +103,6 @@ namespace operations_research {
   void SetObjectiveOffset(double value) override;
   // Clears the objective from all its terms.
   void ClearObjective() override;
-  void BranchingPriorityChangedForVariable(int var_index) override;
 
   // ------ Query statistics on the solution and the solve ------
   // Number of simplex or interior-point iterations

@@ -110,4 +110,3 @@ if(MOSEK_FOUND AND NOT TARGET Mosek::Mosek)
       target_include_directories(mosek::mosek INTERFACE "${MOSEKINC}")
   endif()
 endif()
-
