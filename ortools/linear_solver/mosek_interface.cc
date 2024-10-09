@@ -697,8 +697,8 @@ void MosekInterface::AddRowConstraint(MPConstraint* const ct) {
   std::vector<double> cof; cof.reserve(ct->coefficients_.size());
   std::vector<int> subj; subj.reserve(cof.size());
   for (auto it : ct->terms()) {
-    subj.push_back(it.first);
-    cof.push_back(it.second);
+    subj.push_back(it->first);
+    cof.push_back(it->second);
   }
 
   CheckedMosekCall(MSK_putarow(task_,conidx,subj.size(),subj.data(),cof.data()));
@@ -713,12 +713,13 @@ bool MosekInterface::AddIndicatorConstraint(MPConstraint* const ct) {
   mp_cons_to_mosek_cons_.push_back(-1-djci);
   indcon_afeidx.push_back(afei);
   
-  int indvar = ct->indicator_variable();
+  auto indvar = ct->indicator_variable();
 
-  CheckedMosekCall(MSK_putvartype(task_,indvar,MSK_VAR_TYPE_INT));
+  CHECK(indvar != nullptr);
+  CheckedMosekCall(MSK_putvartype(task_,indvar->index(),MSK_VAR_TYPE_INT));
 
   // TODO: Check if variable type and bounds for an indicator variable are set by the interface.
-  CheckedMosekCall(MSK_putvarbound(task_,indvar,MSK_BK_RA,0.0,1.0));
+  CheckedMosekCall(MSK_putvarbound(task_,indvar->index(),MSK_BK_RA,0.0,1.0));
   
   {
     double lb = ct->lb(); 
@@ -726,7 +727,7 @@ bool MosekInterface::AddIndicatorConstraint(MPConstraint* const ct) {
 
     int64_t domidxs[4] = { domidx_rzero,domidx_rzero, domidx_rplus, domidx_rminus };
     int64_t afeidxs[4] = { afei, afei, afei+1, afei+1 };
-    double  b[3]       = { 0.0, 1.0, lb,ub };
+    double  b[4]       = { 0.0, 1.0, lb,ub };
     int64_t termsize[2] = {1, 3};
 
     if (lb <= ub && lb >= ub) {
@@ -759,7 +760,7 @@ bool MosekInterface::AddIndicatorConstraint(MPConstraint* const ct) {
 
 void MosekInterface::AddVariable(MPVariable* const var) {
   int j;
-  CheckedMosekCall(MSK_getnumvar(task_));
+  CheckedMosekCall(MSK_getnumvar(task_,&j));
   CheckedMosekCall(MSK_appendvars(task_,1));
   double lb = ct->lb(); 
   double ub = ct->ub(); 

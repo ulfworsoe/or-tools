@@ -1387,6 +1387,7 @@ class MPConstraint {
   friend class CLPInterface;
   friend class GLPKInterface;
   friend class SCIPInterface;
+  friend class MosekInterface;
   friend class SLMInterface;
   friend class GurobiInterface;
   friend class CplexInterface;
