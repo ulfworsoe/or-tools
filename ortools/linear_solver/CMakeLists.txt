@@ -42,7 +42,7 @@ target_link_libraries(${NAME} PRIVATE
   $<$<BOOL:${USE_COINOR}>:Coin::Cbc>
   $<$<BOOL:${USE_COINOR}>:Coin::Clp>
   $<$<BOOL:${USE_CPLEX}>:CPLEX::CPLEX>
-  $<$<BOOL:${USE_MOSEK}>:mosek64>
+  $<$<BOOL:${USE_MOSEK}>:mosek::mosek>
   $<$<BOOL:${USE_GLPK}>:GLPK::GLPK>
   $<$<BOOL:${USE_HIGHS}>:highs::highs>
   $<$<BOOL:${USE_PDLP}>:Eigen3::Eigen>
@@ -50,9 +50,6 @@ target_link_libraries(${NAME} PRIVATE
   ${PROJECT_NAMESPACE}::ortools_proto)
 #add_library(${PROJECT_NAMESPACE}::linear_solver ALIAS ${NAME})
 
-link_directories(${NAME} 
-    $<$<BOOL:${USE_MOSEK}>:${MOSEK_PLATFORM_DIR}/bin>
-)
 # solve
 add_executable(solve)
 target_sources(solve PRIVATE "solve.cc")

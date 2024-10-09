@@ -1241,6 +1241,7 @@ class MPVariable {
   friend class SLMInterface;
   friend class GurobiInterface;
   friend class CplexInterface;
+  friend class MosekInterface;
   friend class XpressInterface;
   friend class GLOPInterface;
   friend class MPVariableSolutionValueTest;
