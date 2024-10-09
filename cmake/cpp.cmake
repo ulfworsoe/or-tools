@@ -392,6 +392,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
   ${RE2_DEPS}
   ${COINOR_DEPS}
   $<$<BOOL:${USE_CPLEX}>:CPLEX::CPLEX>
+  $<$<BOOL:${USE_MOSEK}>:mosek::mosek>
   $<$<BOOL:${USE_GLPK}>:GLPK::GLPK>
   $<$<BOOL:${USE_HIGHS}>:highs::highs>
   ${PDLP_DEPS}

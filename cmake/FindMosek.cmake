@@ -39,6 +39,7 @@ A user may set ``MOSEK_PLATFORM_DIR`` to a Mosek installation platform
 directoru to tell this module where to look.
 #]=======================================================================]
 set(MOSEK_FOUND FALSE)
+message(STATUS "Locating MOSEK")
 
 if(CMAKE_C_COMPILER_LOADED)
   include (CheckIncludeFile)
