@@ -530,18 +530,19 @@ struct MPCallbackWithMosekContext {
 void MSKAPI StreamCallbackImpl(
     MSKuserhandle_t h,
     const char * msg) {
-  
+  //std::cout << msg << std::flush; 
   MPCallbackWithMosekContext* const callback_with_context = 
       static_cast<MPCallbackWithMosekContext*>(h);
 
   CHECK(callback_with_context != nullptr);
   CHECK(callback_with_context->context != nullptr);
   callback_with_context->context->Update(msg);
-  
-  callback_with_context->callback->RunCallback(callback_with_context->context);
+ 
+  if (callback_with_context->callback) {
+    callback_with_context->callback->RunCallback(callback_with_context->context);
+  }
 
   callback_with_context->context->Reset();
-
 }
 
 // NOTE(user): This function must have this exact API, because we are passing
@@ -558,11 +559,12 @@ int MSKAPI CallbackImpl(MSKtask_t task,
   CHECK(callback_with_context != nullptr);
   CHECK(callback_with_context->context != nullptr);
 
-
-  callback_with_context->context->Update(where,dinf,iinf,liinf);
-  callback_with_context->callback->RunCallback(callback_with_context->context);
+  if (callback_with_context->callback) {
+    callback_with_context->context->Update(where,dinf,iinf,liinf);
+    callback_with_context->callback->RunCallback(callback_with_context->context);
+  }
   callback_with_context->context->Reset();
-  return *(callback_with_context->break_solver) ? 1 : 0;
+  return callback_with_context->break_solver[0] ? 1 : 0;
 }
 
 }  // namespace
@@ -598,8 +600,9 @@ void MosekInterface::CheckedMosekCall(MSKrescodee r) const {
 MosekInterface::MosekInterface(MPSolver* const solver, bool mip)
     : MPSolverInterface(solver),    
       task_(nullptr),
-      mip_(mip),
-      ptask_(nullptr,MSK_deletetask) {
+      mip_(false),
+      ptask_(nullptr,MSK_deletetask),
+      break_solver_(false) {
   CheckedMosekCall(MSK_makeemptytask(nullptr, &task_)); ptask_.reset(&task_);
   CheckedMosekCall(MSK_puttaskname(task_,solver_->Name().c_str()));
   CheckedMosekCall(MSK_putobjsense(task_,maximize_? MSK_OBJECTIVE_SENSE_MAXIMIZE : MSK_OBJECTIVE_SENSE_MINIMIZE));
@@ -701,6 +704,7 @@ void MosekInterface::AddRowConstraint(MPConstraint* const ct) {
 
   double lb = ct->lb(); 
   double ub = ct->ub(); 
+  const std::string & name = ct->name();
 
   MSKboundkeye bk = bk_from_bounds(lb,ub);
   CheckedMosekCall(MSK_putconbound(task_,conidx,bk,lb,ub));
@@ -710,6 +714,8 @@ void MosekInterface::AddRowConstraint(MPConstraint* const ct) {
     subj.push_back(it.first->index());
     cof.push_back(it.second);
   }
+  if (name.size() > 0)
+    CheckedMosekCall(MSK_putconname(task_,conidx,name.c_str()));
 
   CheckedMosekCall(MSK_putarow(task_,conidx,subj.size(),subj.data(),cof.data()));
 }
@@ -730,7 +736,11 @@ bool MosekInterface::AddIndicatorConstraint(MPConstraint* const ct) {
 
   // TODO: Check if variable type and bounds for an indicator variable are set by the interface.
   CheckedMosekCall(MSK_putvarbound(task_,indvar->index(),MSK_BK_RA,0.0,1.0));
-  
+
+  const std::string & name = ct->name();
+  if (name.size() > 0)
+    CheckedMosekCall(MSK_putdjcname(task_,djci,name.c_str()));
+
   {
     double lb = ct->lb(); 
     double ub = ct->ub(); 
@@ -776,10 +786,14 @@ void MosekInterface::AddVariable(MPVariable* const var) {
   double lb = var->lb(); 
   double ub = var->ub(); 
 
+  const std::string & name = var->name();
+
   MSKboundkeye bk = bk_from_bounds(lb,ub);
   CheckedMosekCall(MSK_putvarbound(task_,j,bk,lb,ub));
   if (var->integer())
     CheckedMosekCall(MSK_putvartype(task_,j,MSK_VAR_TYPE_INT));
+  if (name.size() > 0)
+    CheckedMosekCall(MSK_putvarname(task_,j,name.c_str()));
 }
 
 void MosekInterface::SetCoefficient(MPConstraint* const constraint,
@@ -1136,16 +1150,6 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
   solver_->SetSolverSpecificParametersAsString(
       solver_->solver_specific_parameter_string_);
 
-  std::unique_ptr<MosekMPCallbackContext> mosek_context;
-  MPCallbackWithMosekContext mp_callback_with_context = { .break_solver = &break_solver_, };// .callback = callback_, .context = nullptr, };
-  mp_callback_with_context.callback = callback_;                                                    
-  if (callback_ == nullptr) {
-    CheckedMosekCall(MSK_putcallbackfunc(task_, nullptr, nullptr));
-  } 
-  else {
-    mosek_context = std::make_unique<MosekMPCallbackContext>(task_);
-    mp_callback_with_context.context = mosek_context.get();
-  }
 
   // remove any pre-existing solution in task that are not relevant for the result.
   MSK_putintparam(task_,MSK_IPAR_REMOVE_UNUSED_SOLUTIONS,MSK_ON);
@@ -1155,9 +1159,17 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
 
   MSKrescodee trm;
   {
+    MosekMPCallbackContext mosek_context(task_);
+    MPCallback * cb = callback_;
+    MPCallbackWithMosekContext mp_callback_with_context = {
+      .context = &mosek_context,
+      .callback = cb,
+      .break_solver = &break_solver_};
+
     MSK_putcallbackfunc(task_,CallbackImpl,&mp_callback_with_context);
     MSK_linkfunctotaskstream(task_,MSK_STREAM_LOG,&mp_callback_with_context,StreamCallbackImpl);
     CheckedMosekCall(MSK_optimizetrm(task_,&trm));
+    MSK_writedata(task_,"test.ptf");
     MSK_linkfunctotaskstream(task_,MSK_STREAM_LOG,nullptr,nullptr);
     MSK_putcallbackfunc(task_,nullptr,nullptr);
   }
@@ -1165,8 +1177,8 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
   VLOG(1) << absl::StrFormat("Solved in %s.",
                              absl::FormatDuration(timer.GetDuration()));
   // Get the status.
-  MSKprostae prosta = MSK_PRO_STA_UNKNOWN;
-  MSKsolstae solsta = MSK_SOL_STA_UNKNOWN;
+  MSKprostae prosta = (MSKprostae)-1;
+  MSKsolstae solsta = (MSKsolstae)-1;
   MSKsoltypee whichsol;
   bool soldefined = true;
   {
@@ -1189,10 +1201,12 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
   VLOG(1) << absl::StrFormat("Solution status %d.\n", prosta);
   const int solution_count = SolutionCount();
 
-  MPSolver::ResultStatus result_status;
-  if (solsta == MSK_SOL_STA_OPTIMAL ||
-      solsta == MSK_SOL_STA_INTEGER_OPTIMAL) {
-      result_status = MPSolver::OPTIMAL;
+  if (! soldefined) {
+    result_status_ = MPSolver::NOT_SOLVED;
+  }
+  else if (solsta == MSK_SOL_STA_OPTIMAL ||
+           solsta == MSK_SOL_STA_INTEGER_OPTIMAL) {
+      result_status_ = MPSolver::OPTIMAL;
   }
   else if (solsta == MSK_SOL_STA_PRIM_AND_DUAL_FEAS) {
       result_status_ = MPSolver::FEASIBLE;
@@ -1213,7 +1227,7 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
   }
 
   // Get best objective bound value
-  if (IsMIP() && (result_status_ == MPSolver::FEASIBLE &&
+  if (IsMIP() && (result_status_ == MPSolver::FEASIBLE ||
                   result_status_ == MPSolver::OPTIMAL)) {
     MSK_getdouinf(task_,MSK_DINF_MIO_OBJ_BOUND,&best_objective_bound_);
     VLOG(1) << "best bound = " << best_objective_bound_;

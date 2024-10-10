@@ -554,9 +554,7 @@ bool MPSolver::SupportsProblemType(OptimizationProblemType problem_type) {
     return true;
   }
 #endif
-  std::cerr<< "------------------ pt = " << (int)problem_type << std::endl;
 #ifdef USE_MOSEK
-  std::cerr<< "------------------ pt = " << problem_type << std::endl;
   if (problem_type == MOSEK_LINEAR_PROGRAMMING ||
       problem_type == MOSEK_MIXED_INTEGER_PROGRAMMING) {
     return true;
