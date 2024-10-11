@@ -59,12 +59,22 @@ class MosekSolver : public SolverInterface {
   Mosek msk;
   absl::flat_hash_map<int64_t, int> variable_map;
   absl::flat_hash_map<int64_t, int> linconstr_map;
+  absl::flat_hash_map<int64_t, int64_t> coneconstr_map;
+  absl::flat_hash_map<int64_t, int64_t> indconstr_map;
 
+  absl::Status ReplaceObjective(const ObjectiveProto & obj);
+  absl::Status AddVariables(const VariablesProto & vars);
+  absl::Status AddConstraints(const ConstraintsProto & vars);
+  absl::Status AddIndicatorConstraints(const ::google::protobuf::Map<int64_t, IndicatorConstraintProto> & cons);
+  absl::Status AddConicConstraints(const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto> & cons);
 
+  absl::Status UpdateVariables(const VariableUpdatesProto & varupds);
+  absl::Status UpdateConstraints(const ConstraintsUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds);
+  absl::Status UpdateObjective(const ObjectiveUpdatesProto & objupds);
+  absl::Status UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds);
+  absl::Status UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds);
 
-
-
-
+  MosekSolver();
 
 #if 0
   struct SolutionClaims {
@@ -78,7 +88,6 @@ class MosekSolver : public SolverInterface {
     SolutionClaims solution_claims;
   };
 
-  MosekSolver(std::unique_ptr<Mosek> mosek);
 
   absl::StatusOr<bool> PrimalRayReturned() const;
   absl::StatusOr<bool> DualRayReturned() const;

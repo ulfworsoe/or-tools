@@ -11,9 +11,15 @@ namespace operations_research::math_opt {
 
 class Mosek {
   public:
+    enum class ConeType {
+      SecondOrderCone,
+      RotatedSecondOrderCone
+    };
+
     using VariableIndex = int32_t;
     using ConstraintIndex = int32_t;
-    using IndConstraintIndex = int64_t;
+    using DjcConstraintIndex = int64_t;
+    using ConeConstraintIndex = int64_t;
 
 
     Mosek();
@@ -38,11 +44,26 @@ class Mosek {
                             const std::vector<VariableIndex>& subj,
                             const std::vector<double>& valij);
 
-    absl::StatusOr<IndConstraintIndex> AppendIndicatorConstraint(
-        VariableIndex j, const std::vector<VariableIndex>& subj,
+    absl::StatusOr<DjcConstraintIndex> AppendIndicatorConstraint(
+        bool negate,
+        VariableIndex indvar, const std::vector<VariableIndex>& subj,
         const std::vector<double>& cof, double lb, double ub);
-
-        int NumVar() const;
+    absl::Status PutDJCName(DjcConstraintIndex djci, const std::string & name);
+    
+    absl::StatusOr<ConeConstraintIndex> AppendConeConstraint(
+        ConeType ct, const std::vector<int64_t>& ptr,
+        const std::vector<VariableIndex>& subj, const std::vector<double>& cof,
+        const std::vector<double>& b);
+    
+    // Update
+    
+    absl::Status UpdateVariableLowerBound(VariableIndex j, double b);
+    absl::Status UpdateVariableUpperBound(VariableIndex j, double b);
+    absl::Status UpdateVariableType(VariableIndex j, bool is_integer);
+    absl::Status UpdateConstraintLowerBound(ConstraintIndex i, double b);
+    absl::Status UpdateConstraintUpperBound(ConstraintIndex i, double b);
+    // Query
+    int NumVar() const;
     int NumCon() const;
 
   private:    

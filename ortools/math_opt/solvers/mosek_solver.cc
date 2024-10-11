@@ -427,362 +427,591 @@ absl::StatusOr<SolutionStatusProto> ToSolutionStatus(
 
 }  // namespace
 
-absl::StatusOr<FeasibilityStatusProto> HighsSolver::DualFeasibilityStatus(
-    const HighsInfo& highs_info, const bool is_integer,
-    const SolutionClaims solution_claims) {
-  const bool dual_feasible_solution_exists =
-      solution_claims.highs_returned_dual_feasible_solution ||
-      (is_integer && std::isfinite(highs_info.mip_dual_bound));
-  if (dual_feasible_solution_exists &&
-      solution_claims.highs_returned_primal_ray) {
-    return util::InternalErrorBuilder()
-           << "Found dual feasible solution and primal ray";
-  }
-  if (dual_feasible_solution_exists) {
-    return FEASIBILITY_STATUS_FEASIBLE;
-  }
-  if (solution_claims.highs_returned_primal_ray) {
-    return FEASIBILITY_STATUS_INFEASIBLE;
-  }
-  return FEASIBILITY_STATUS_UNDETERMINED;
-}
 
-absl::StatusOr<FeasibilityStatusProto> HighsSolver::PrimalFeasibilityStatus(
-    const SolutionClaims solution_claims) {
-  if (solution_claims.highs_returned_primal_feasible_solution &&
-      solution_claims.highs_returned_dual_ray) {
-    return util::InternalErrorBuilder()
-           << "Found primal feasible solution and dual ray";
-  }
-  if (solution_claims.highs_returned_primal_feasible_solution) {
-    return FEASIBILITY_STATUS_FEASIBLE;
-  }
-  if (solution_claims.highs_returned_dual_ray) {
-    return FEASIBILITY_STATUS_INFEASIBLE;
-  }
-  return FEASIBILITY_STATUS_UNDETERMINED;
-}
 
-absl::StatusOr<TerminationProto> HighsSolver::MakeTermination(
-    const HighsModelStatus highs_model_status, const HighsInfo& highs_info,
-    const bool is_integer, const bool had_node_limit,
-    const bool had_solution_limit, const bool is_maximize,
-    const SolutionClaims solution_claims) {
-  ASSIGN_OR_RETURN(
-      const FeasibilityStatusProto dual_feasibility_status,
-      DualFeasibilityStatus(highs_info, is_integer, solution_claims));
-  ASSIGN_OR_RETURN(const FeasibilityStatusProto primal_feasibility_status,
-                   PrimalFeasibilityStatus(solution_claims));
 
-  const std::optional<double> optional_finite_primal_objective =
-      (primal_feasibility_status == FEASIBILITY_STATUS_FEASIBLE)
-          ? std::make_optional(highs_info.objective_function_value)
-          : std::nullopt;
-  const std::optional<double> optional_dual_objective =
-      (dual_feasibility_status == FEASIBILITY_STATUS_FEASIBLE)
-          ? std::make_optional(DualObjective(highs_info, is_integer))
-          : std::nullopt;
-  switch (highs_model_status) {
-    case HighsModelStatus::kNotset:
-    case HighsModelStatus::kLoadError:
-    case HighsModelStatus::kModelError:
-    case HighsModelStatus::kPresolveError:
-    case HighsModelStatus::kSolveError:
-    case HighsModelStatus::kPostsolveError:
-    case HighsModelStatus::kUnknown:
-    // Note: we actually deal with kModelEmpty separately in Solve(), this
-    // case should not be hit.
-    case HighsModelStatus::kModelEmpty:
-      return util::InternalErrorBuilder()
-             << "HighsModelStatus was "
-             << utilModelStatusToString(highs_model_status);
-    case HighsModelStatus::kOptimal: {
-      return OptimalTerminationProto(highs_info.objective_function_value,
-                                     DualObjective(highs_info, is_integer),
-                                     "HighsModelStatus is kOptimal");
-    }
-    case HighsModelStatus::kInfeasible:
-      // By convention infeasible MIPs are always dual feasible.
-      return InfeasibleTerminationProto(is_maximize,
-                                        /*dual_feasibility_status=*/is_integer
-                                            ? FEASIBILITY_STATUS_FEASIBLE
-                                            : dual_feasibility_status);
-    case HighsModelStatus::kUnboundedOrInfeasible:
-      return InfeasibleOrUnboundedTerminationProto(
-          is_maximize, dual_feasibility_status,
-          "HighsModelStatus is kUnboundedOrInfeasible");
-    case HighsModelStatus::kUnbounded: {
-      // TODO(b/271104776): we should potentially always return
-      // TERMINATION_REASON_UNBOUNDED instead, we need to determine if
-      // HighsModelStatus::kUnbounded implies the problem is known to be primal
-      // feasible (for LP and MIP).
-      if (highs_info.primal_solution_status == ::kSolutionStatusFeasible) {
-        return UnboundedTerminationProto(is_maximize);
-      } else {
-        return InfeasibleOrUnboundedTerminationProto(
-            is_maximize,
-            /*dual_feasibility_status=*/FEASIBILITY_STATUS_INFEASIBLE,
-            "HighsModelStatus is kUnbounded");
-      }
-    }
-    case HighsModelStatus::kObjectiveBound:
-      return LimitTerminationProto(
-          is_maximize, LIMIT_OBJECTIVE, optional_finite_primal_objective,
-          optional_dual_objective, "HighsModelStatus is kObjectiveBound");
-    case HighsModelStatus::kObjectiveTarget:
-      return LimitTerminationProto(
-          is_maximize, LIMIT_OBJECTIVE, optional_finite_primal_objective,
-          optional_dual_objective, "HighsModelStatus is kObjectiveTarget");
-    case HighsModelStatus::kTimeLimit:
-      return LimitTerminationProto(is_maximize, LIMIT_TIME,
-                                   optional_finite_primal_objective,
-                                   optional_dual_objective);
-    case HighsModelStatus::kIterationLimit: {
+
+
+
+
+
+absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
+  const int num_vars = model.variables().ids_size;
+  int firstvar; MSK_getnumvar(task,&firstvar);
+
+  { int i = 0; for (const auto & v : vars.ids()) variable[v] = firstvar+i; ++i; }
+
+  std::vector<double> lbx(num_vars);
+  std::vector<double> ubx(num_vars);
+  { int i = 0; for (const auto & v : vars.lower_bounds()) lbx[i++] = v; }
+  { int i = 0; for (const auto & v : vars.upper_bounds()) ubx[i++] = v; }
+  
+  RETURN_IF_ERROR(msk.AppendVars(lbx,ubx));
+
+  {
+    int i = 0; 
+    for (const bool is_integer : vars.integers()) {
       if (is_integer) {
-        if (had_node_limit && had_solution_limit) {
-          return LimitTerminationProto(
-              is_maximize, LIMIT_UNDETERMINED, optional_finite_primal_objective,
-              optional_dual_objective,
-              "Both node limit and solution limit were requested, cannot "
-              "determine reason for termination");
-        } else if (had_node_limit) {
-          return LimitTerminationProto(is_maximize, LIMIT_NODE,
-                                       optional_finite_primal_objective,
-                                       optional_dual_objective);
-        } else if (had_solution_limit) {
-          return LimitTerminationProto(is_maximize, LIMIT_SOLUTION,
-                                       optional_finite_primal_objective,
-                                       optional_dual_objective);
-        }
-      } else {
-        // For LP, only the MathOpt iteration limit can cause highs to return
-        // HighsModelStatus::kIterationLimit.
-        return LimitTerminationProto(is_maximize, LIMIT_ITERATION,
-                                     optional_finite_primal_objective,
-                                     optional_dual_objective);
+        RETURN_IF_ERROR(msk.PutVarType(ids[i],true));
       }
+      ++i;
     }
   }
-  return util::InternalErrorBuilder() << "HighsModelStatus unimplemented: "
-                                      << static_cast<int>(highs_model_status);
-}
-
-SolveResultProto HighsSolver::ResultForHighsModelStatusModelEmpty(
-    const bool is_maximize, const double objective_offset,
-    const absl::flat_hash_map<int64_t, IndexAndBound>& lin_con_data) {
-  SolveResultProto result;
-  bool feasible = true;
-  for (const auto& [unused, lin_con_bounds] : lin_con_data) {
-    if (lin_con_bounds.lb > 0 || lin_con_bounds.ub < 0) {
-      feasible = false;
-      break;
+  { 
+    int i = 0; for (const auto & name : model.linear_variables().names()) {
+      msk.PutVarName(firstvar+i,name.c_str());
+      ++i;
     }
   }
-  result.mutable_termination()->set_reason(
-      feasible ? TERMINATION_REASON_OPTIMAL : TERMINATION_REASON_INFEASIBLE);
-  result.mutable_termination()->set_detail("HighsModelStatus was kEmptyModel");
-  if (feasible) {
-    auto solution = result.add_solutions()->mutable_primal_solution();
-    solution->set_objective_value(objective_offset);
-    solution->set_feasibility_status(SOLUTION_STATUS_FEASIBLE);
-    *result.mutable_termination() =
-        OptimalTerminationProto(objective_offset, objective_offset);
-  } else {
-    // If the primal problem has no variables, the dual problem is unconstrained
-    // and thus always feasible.
-    *result.mutable_termination() =
-        InfeasibleTerminationProto(is_maximize, /*dual_feasibility_status=*/
-                                   FEASIBILITY_STATUS_FEASIBLE);
-    // It is probably possible to return a ray here as well.
-  }
-  return result;
-}
+} // MosekSolver::AddVariables
 
-InvertedBounds HighsSolver::ListInvertedBounds() {
-  const auto find_crossed =
-      [](const absl::flat_hash_map<int64_t, IndexAndBound>& id_to_bound_data) {
-        std::vector<int64_t> result;
-        for (const auto& [id, bound_data] : id_to_bound_data) {
-          if (bound_data.bounds_cross()) {
-            result.push_back(id);
-          }
-        }
-        absl::c_sort(result);
-        return result;
-      };
-  return {.variables = find_crossed(variable_data_),
-          .linear_constraints = find_crossed(lin_con_data_)};
-}
+absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
+  msk.PutObjName(obj.name());
+  msk.PutObjectiveSense(model.maximize());
+  auto objcof = obj.linear_coefficients();
+  msk.PutCFix(obj.offset());
+  std::vector<double> c(num_vars);
+  auto n = objcof.ids_size;
+  for (int64_t i = 0; i < n; ++i) {
+    c[objcof.ids(i)] = objcof.values(i);
+  }
+  msk.PutC(c);
+} // MosekSolver::ReplaceObjective
 
-absl::StatusOr<std::optional<BasisProto>> HighsSolver::ExtractBasis() {
-  const HighsInfo& highs_info = highs_->getInfo();
-  const HighsBasis& highs_basis = highs_->getBasis();
-  const HighsSolution& highs_solution = highs_->getSolution();
-  if (highs_info.basis_validity != ::kBasisValidityValid) {
-    return std::nullopt;
-  }
-  // We need the primal/dual solution to try and infer a more precise status
-  // for varaiables and constraints listed as kNonBasic.
-  if (!highs_solution.value_valid || !highs_solution.dual_valid) {
-    return std::nullopt;
-  }
-  // Make sure the solution is the right size
-  RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_value))
-      << "invalid highs_solution.col_value";
-  RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_dual))
-      << "invalid highs_solution.col_dual";
-  // Make sure the basis is the right size
-  RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_basis.col_status))
-      << "invalid highs_basis.col_status";
-  RETURN_IF_ERROR(EnsureOneEntryPerLinearConstraint(highs_basis.row_status))
-      << "invalid highs_basis.row_status";
-  BasisProto basis;
-
-  if (highs_->getModelStatus() == HighsModelStatus::kOptimal) {
-    basis.set_basic_dual_feasibility(SOLUTION_STATUS_FEASIBLE);
-  } else if (highs_info.dual_solution_status == kSolutionStatusInfeasible) {
-    basis.set_basic_dual_feasibility(SOLUTION_STATUS_INFEASIBLE);
-  } else {
-    // TODO(b/272767311): we need to do more to fill this in properly.
-    basis.set_basic_dual_feasibility(SOLUTION_STATUS_UNDETERMINED);
-  }
-  for (const int64_t var_id : SortedMapKeys(variable_data_)) {
-    const IndexAndBound& index_and_bounds = variable_data_.at(var_id);
-    const double var_value = highs_solution.col_value[index_and_bounds.index];
-    OR_ASSIGN_OR_RETURN3(
-        const std::optional<BasisStatusProto> status,
-        ToBasisStatus(highs_basis.col_status[variable_data_.at(var_id).index],
-                      index_and_bounds.lb, index_and_bounds.ub, var_value),
-        _ << "invalid highs_basis.col_status for variable with id: " << var_id);
-    if (!status.has_value()) {
-      return std::nullopt;
+absl::Status MosekSolver::AddConstraints(const ConstraintsProto & cons) {
+  int firstcon = ms. MSK_getnumcon(task,&firstcon);
+  auto numcon = cons.size_ids;
+  {
+    int i = 0;
+    for (const auto& id : cons.ids()) {
+      linconstr_map[id] = i;
+      ++i;
     }
-    basis.mutable_variable_status()->add_ids(var_id);
-    basis.mutable_variable_status()->add_values(*status);
   }
-  for (const int64_t lin_con_id : SortedMapKeys(lin_con_data_)) {
-    const IndexAndBound& index_and_bounds = lin_con_data_.at(lin_con_id);
-    const double dual_value = highs_solution.row_dual[index_and_bounds.index];
-    OR_ASSIGN_OR_RETURN3(
-        const std::optional<BasisStatusProto> status,
-        ToBasisStatus(highs_basis.row_status[index_and_bounds.index],
-                      index_and_bounds.lb, index_and_bounds.ub, dual_value),
-        _ << "invalid highs_basis.row_status for linear constraint with id: "
-          << lin_con_id);
-    if (!status.has_value()) {
-      return std::nullopt;
+  std::vector<double> clb(numcon);
+  std::vector<double> cub(numcon);
+  { int i = 0; for (const auto & b : cons.lower_bounds()) clb[i++] = b; }
+  { int i = 0; for (const auto & b : cons.upper_bounds()) cub[i++] = b; }
+  msg.AppendCons(clb,cub);
+
+  { 
+    int i = 0; for (const auto & name : cons.names()) {
+      msk.PutConName(firstcon+i,name.c_str());
+      ++i;
     }
-    basis.mutable_constraint_status()->add_ids(lin_con_id);
-    basis.mutable_constraint_status()->add_values(*status);
   }
-  return basis;
-}
 
-absl::StatusOr<bool> HighsSolver::PrimalRayReturned() const {
-  if (!highs_->hasInvert()) {
-    return false;
-  }
-  bool has_primal_ray = false;
-  // Note getPrimalRay may return without modifying has_primal_ray, in which
-  // case it will remain at its default false value.
-  RETURN_IF_ERROR(ToStatus(highs_->getPrimalRay(has_primal_ray,
-                                                /*primal_ray_value=*/nullptr)));
-  return has_primal_ray;
-}
+  auto adata = model.linear_constraint_matrix();
+  size_t nnz = adata.size_row_ids;
+  std::vector<Mosek::VariableIndex> subj; subj.reserve(nnz);
+  std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
+  std::vector<double> valij; valij.reserve(nnz);
 
-absl::StatusOr<bool> HighsSolver::DualRayReturned() const {
-  if (!highs_->hasInvert()) {
-    return false;
-  }
-  bool has_dual_ray = false;
-  // Note getPrimalRay may return without modifying has_dual_ray, in which
-  // case it will remain at its default false value.
-  RETURN_IF_ERROR(ToStatus(highs_->getDualRay(has_dual_ray,
-                                              /*dual_ray_value=*/nullptr)));
-  return has_dual_ray;
-}
+  for (const auto id : adata.row_ids())
+    subj.push_back(variable_map[id]);
+  for (const auto id : adata.column_ids())
+    subi.push_back(linconstr_map[id]);
+  for (const auto c : adata.coefficients())
+    valij.push_back(c);
+  RETURN_IF_ERROR(msk.PutAIJList(asubi,asubj,valij));
+} // MosekSolver::AddConstraints
 
-absl::StatusOr<HighsSolver::SolutionsAndClaims>
-HighsSolver::ExtractSolutionAndRays(
-    const ModelSolveParametersProto& model_params) {
-  const HighsInfo& highs_info = highs_->getInfo();
-  const HighsSolution& highs_solution = highs_->getSolution();
-  SolutionsAndClaims solution_and_claims;
-  if (highs_info.primal_solution_status == ::kSolutionStatusFeasible &&
-      !highs_solution.value_valid) {
-    return absl::InternalError(
-        "highs_info.primal_solution_status==::kSolutionStatusFeasible, but no "
-        "valid primal solution returned");
+absl::Status MosekSolver::AddIndicatorConstraints(
+    const ::google::protobuf::Map<int64_t, IndicatorConstraintProto>& cons) {
+  int i = 0;
+  std::vector<Mosek::VariableIndex> subj;
+  std::vector<double> cof;
+  for (const auto & [id, con] : cons) {
+    indconstr_map[id] = i++;
+    Mosek::VariableIndex indvar = indconstr_map[con.indicator_id()];
+
+    subj.clear(); subj.reserve(con.expressions().size_ids);
+    cof.clear(); cof.reserve(con.expressions().size_ids);
+
+    for (auto id : con.expression().ids()) { subj.push_back(variable_map[id]); }
+    for (auto c : con.expression().values() { cof.push_back(c); }
+
+    auto djci = msk.AppendIndicatorConstraint(con.activate_on_zero(),indvar,subj,cof,con.lower_bound(),con.upper_bound());
+    if (!djci.ok()) { return djci.status(); }
+
+    msk.PutDJCName(*djci,con.name());
   }
-  if (highs_solution.value_valid || highs_solution.dual_valid) {
-    SolutionProto& solution =
-        solution_and_claims.solutions.emplace_back(SolutionProto());
-    if (highs_solution.value_valid) {
-      RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_value))
-          << "invalid highs_solution.col_value";
-      PrimalSolutionProto& primal_solution =
-          *solution.mutable_primal_solution();
-      primal_solution.set_objective_value(highs_info.objective_function_value);
-      OR_ASSIGN_OR_RETURN3(const SolutionStatusProto primal_solution_status,
-                           ToSolutionStatus(highs_info.primal_solution_status),
-                           _ << "invalid highs_info.primal_solution_status");
-      primal_solution.set_feasibility_status(primal_solution_status);
-      solution_and_claims.solution_claims
-          .highs_returned_primal_feasible_solution =
-          primal_solution.feasibility_status() == SOLUTION_STATUS_FEASIBLE;
-      for (const int64_t var_id : SortedMapKeys(variable_data_)) {
-        primal_solution.mutable_variable_values()->add_ids(var_id);
-        primal_solution.mutable_variable_values()->add_values(
-            highs_solution.col_value[variable_data_.at(var_id).index]);
-      }
+} // MosekSolver::AddIndicatorConstraints
+
+absl::Status MosekSolver::AddConicConstraints(
+  const ::google::protobuf::Map<int64_t, SecondOrderCodeConstraintProto>&
+      cons) {
+
+  std::vector<Mosek::VariableIndex> subj;
+  std::vector<double>  cof;
+  std::vector<int64_t> ptr;
+  std::vector<double>  b;
+
+  ptr.reserve(1+cons.size());
+  ptr.push_back(0);
+  for (const auto & [idx, con] : cons) {
+    auto & expr0 = con.upper_bound();
+    int64_t totalnnz = expr0.size_ids();
+    for (const auto & lexp : con.arguments_to_norm()) {
+      totalnnz += lexp.size_ids();
     }
-    if (highs_solution.dual_valid) {
-      RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_dual))
-          << "invalid highs_solution.col_dual";
-      RETURN_IF_ERROR(
-          EnsureOneEntryPerLinearConstraint(highs_solution.row_dual))
-          << "invalid highs_solution.row_dual";
-      DualSolutionProto& dual_solution = *solution.mutable_dual_solution();
-      dual_solution.set_objective_value(highs_info.objective_function_value);
-      OR_ASSIGN_OR_RETURN3(const SolutionStatusProto dual_solution_status,
-                           ToSolutionStatus(highs_info.dual_solution_status),
-                           _ << "invalid highs_info.dual_solution_status");
-      dual_solution.set_feasibility_status(dual_solution_status);
-      solution_and_claims.solution_claims
-          .highs_returned_dual_feasible_solution =
-          dual_solution.feasibility_status() == SOLUTION_STATUS_FEASIBLE;
-      for (const int64_t var_id : SortedMapKeys(variable_data_)) {
-        dual_solution.mutable_reduced_costs()->add_ids(var_id);
-        dual_solution.mutable_reduced_costs()->add_values(
-            highs_solution.col_dual[variable_data_.at(var_id).index]);
-      }
-      for (const int64_t lin_con_id : SortedMapKeys(lin_con_data_)) {
-        dual_solution.mutable_dual_values()->add_ids(lin_con_id);
-        dual_solution.mutable_dual_values()->add_values(
-            highs_solution.row_dual[lin_con_data_.at(lin_con_id).index]);
-      }
+
+    subj.reserve(totalnnz);
+    cof.reserve(totalnnz);
+    b.push_back(expr0.offset());
+
+    for (const auto & id : expr0.ids()) { subj.push_back(variable_map[id]); }
+    for (auto c : expr0.coefficients()) { cof.push_back(c); }
+
+    for (const auto & expri : con.arguments_to_norm()) {
+      ptr.push_back(subj.size());
+      for (const auto & id : expri.ids()) { subj.push_back(variable_map[id]); }
+      for (auto c : expri.coefficients()) { cof.push_back(c); }
+      b.push_back(expri.offset());
     }
-    ASSIGN_OR_RETURN(std::optional<BasisProto> basis_proto,
-                     HighsSolver::ExtractBasis());
-    if (basis_proto.has_value()) {
-      *solution.mutable_basis() = *std::move(basis_proto);
+
+    ptr.push_back(subj.size());
+
+    auto acci = msk.AppendConeConstraint(Mosek::ConeType::SecondOrderCone,ptr,subj,cof,b);
+    if (!acci.ok()) {
+      return acci.status();
     }
-    ApplyAllFilters(model_params, solution);
+
+    RETURN_IF_ERROR(msk.PutAccName(*acci, con.name()));
   }
-
-  ASSIGN_OR_RETURN(
-      solution_and_claims.solution_claims.highs_returned_primal_ray,
-      PrimalRayReturned());
-  ASSIGN_OR_RETURN(solution_and_claims.solution_claims.highs_returned_dual_ray,
-                   DualRayReturned());
-
-  return solution_and_claims;
 }
 
 
 
 
-absl::StatusOr<std::unique_ptr<SolverInterface>> HighsSolver::New(
+
+
+
+
+
+
+
+
+//absl::StatusOr<FeasibilityStatusProto> MosekSolver::DualFeasibilityStatus(
+//    const HighsInfo& highs_info, const bool is_integer,
+//    const SolutionClaims solution_claims) {
+//  const bool dual_feasible_solution_exists =
+//      solution_claims.highs_returned_dual_feasible_solution ||
+//      (is_integer && std::isfinite(highs_info.mip_dual_bound));
+//  if (dual_feasible_solution_exists &&
+//      solution_claims.highs_returned_primal_ray) {
+//    return util::InternalErrorBuilder()
+//           << "Found dual feasible solution and primal ray";
+//  }
+//  if (dual_feasible_solution_exists) {
+//    return FEASIBILITY_STATUS_FEASIBLE;
+//  }
+//  if (solution_claims.highs_returned_primal_ray) {
+//    return FEASIBILITY_STATUS_INFEASIBLE;
+//  }
+//  return FEASIBILITY_STATUS_UNDETERMINED;
+//}
+//
+//absl::StatusOr<FeasibilityStatusProto> MosekSolver::PrimalFeasibilityStatus(
+//    const SolutionClaims solution_claims) {
+//  if (solution_claims.highs_returned_primal_feasible_solution &&
+//      solution_claims.highs_returned_dual_ray) {
+//    return util::InternalErrorBuilder()
+//           << "Found primal feasible solution and dual ray";
+//  }
+//  if (solution_claims.highs_returned_primal_feasible_solution) {
+//    return FEASIBILITY_STATUS_FEASIBLE;
+//  }
+//  if (solution_claims.highs_returned_dual_ray) {
+//    return FEASIBILITY_STATUS_INFEASIBLE;
+//  }
+//  return FEASIBILITY_STATUS_UNDETERMINED;
+//}
+//
+//absl::StatusOr<TerminationProto> MosekSolver::MakeTermination(
+//    const HighsModelStatus highs_model_status, const HighsInfo& highs_info,
+//    const bool is_integer, const bool had_node_limit,
+//    const bool had_solution_limit, const bool is_maximize,
+//    const SolutionClaims solution_claims) {
+//  ASSIGN_OR_RETURN(
+//      const FeasibilityStatusProto dual_feasibility_status,
+//      DualFeasibilityStatus(highs_info, is_integer, solution_claims));
+//  ASSIGN_OR_RETURN(const FeasibilityStatusProto primal_feasibility_status,
+//                   PrimalFeasibilityStatus(solution_claims));
+//
+//  const std::optional<double> optional_finite_primal_objective =
+//      (primal_feasibility_status == FEASIBILITY_STATUS_FEASIBLE)
+//          ? std::make_optional(highs_info.objective_function_value)
+//          : std::nullopt;
+//  const std::optional<double> optional_dual_objective =
+//      (dual_feasibility_status == FEASIBILITY_STATUS_FEASIBLE)
+//          ? std::make_optional(DualObjective(highs_info, is_integer))
+//          : std::nullopt;
+//  switch (highs_model_status) {
+//    case HighsModelStatus::kNotset:
+//    case HighsModelStatus::kLoadError:
+//    case HighsModelStatus::kModelError:
+//    case HighsModelStatus::kPresolveError:
+//    case HighsModelStatus::kSolveError:
+//    case HighsModelStatus::kPostsolveError:
+//    case HighsModelStatus::kUnknown:
+//    // Note: we actually deal with kModelEmpty separately in Solve(), this
+//    // case should not be hit.
+//    case HighsModelStatus::kModelEmpty:
+//      return util::InternalErrorBuilder()
+//             << "HighsModelStatus was "
+//             << utilModelStatusToString(highs_model_status);
+//    case HighsModelStatus::kOptimal: {
+//      return OptimalTerminationProto(highs_info.objective_function_value,
+//                                     DualObjective(highs_info, is_integer),
+//                                     "HighsModelStatus is kOptimal");
+//    }
+//    case HighsModelStatus::kInfeasible:
+//      // By convention infeasible MIPs are always dual feasible.
+//      return InfeasibleTerminationProto(is_maximize,
+//                                        /*dual_feasibility_status=*/is_integer
+//                                            ? FEASIBILITY_STATUS_FEASIBLE
+//                                            : dual_feasibility_status);
+//    case HighsModelStatus::kUnboundedOrInfeasible:
+//      return InfeasibleOrUnboundedTerminationProto(
+//          is_maximize, dual_feasibility_status,
+//          "HighsModelStatus is kUnboundedOrInfeasible");
+//    case HighsModelStatus::kUnbounded: {
+//      // TODO(b/271104776): we should potentially always return
+//      // TERMINATION_REASON_UNBOUNDED instead, we need to determine if
+//      // HighsModelStatus::kUnbounded implies the problem is known to be primal
+//      // feasible (for LP and MIP).
+//      if (highs_info.primal_solution_status == ::kSolutionStatusFeasible) {
+//        return UnboundedTerminationProto(is_maximize);
+//      } else {
+//        return InfeasibleOrUnboundedTerminationProto(
+//            is_maximize,
+//            /*dual_feasibility_status=*/FEASIBILITY_STATUS_INFEASIBLE,
+//            "HighsModelStatus is kUnbounded");
+//      }
+//    }
+//    case HighsModelStatus::kObjectiveBound:
+//      return LimitTerminationProto(
+//          is_maximize, LIMIT_OBJECTIVE, optional_finite_primal_objective,
+//          optional_dual_objective, "HighsModelStatus is kObjectiveBound");
+//    case HighsModelStatus::kObjectiveTarget:
+//      return LimitTerminationProto(
+//          is_maximize, LIMIT_OBJECTIVE, optional_finite_primal_objective,
+//          optional_dual_objective, "HighsModelStatus is kObjectiveTarget");
+//    case HighsModelStatus::kTimeLimit:
+//      return LimitTerminationProto(is_maximize, LIMIT_TIME,
+//                                   optional_finite_primal_objective,
+//                                   optional_dual_objective);
+//    case HighsModelStatus::kIterationLimit: {
+//      if (is_integer) {
+//        if (had_node_limit && had_solution_limit) {
+//          return LimitTerminationProto(
+//              is_maximize, LIMIT_UNDETERMINED, optional_finite_primal_objective,
+//              optional_dual_objective,
+//              "Both node limit and solution limit were requested, cannot "
+//              "determine reason for termination");
+//        } else if (had_node_limit) {
+//          return LimitTerminationProto(is_maximize, LIMIT_NODE,
+//                                       optional_finite_primal_objective,
+//                                       optional_dual_objective);
+//        } else if (had_solution_limit) {
+//          return LimitTerminationProto(is_maximize, LIMIT_SOLUTION,
+//                                       optional_finite_primal_objective,
+//                                       optional_dual_objective);
+//        }
+//      } else {
+//        // For LP, only the MathOpt iteration limit can cause highs to return
+//        // HighsModelStatus::kIterationLimit.
+//        return LimitTerminationProto(is_maximize, LIMIT_ITERATION,
+//                                     optional_finite_primal_objective,
+//                                     optional_dual_objective);
+//      }
+//    }
+//  }
+//  return util::InternalErrorBuilder() << "HighsModelStatus unimplemented: "
+//                                      << static_cast<int>(highs_model_status);
+//}
+//
+//SolveResultProto MosekSolver::ResultForHighsModelStatusModelEmpty(
+//    const bool is_maximize, const double objective_offset,
+//    const absl::flat_hash_map<int64_t, IndexAndBound>& lin_con_data) {
+//  SolveResultProto result;
+//  bool feasible = true;
+//  for (const auto& [unused, lin_con_bounds] : lin_con_data) {
+//    if (lin_con_bounds.lb > 0 || lin_con_bounds.ub < 0) {
+//      feasible = false;
+//      break;
+//    }
+//  }
+//  result.mutable_termination()->set_reason(
+//      feasible ? TERMINATION_REASON_OPTIMAL : TERMINATION_REASON_INFEASIBLE);
+//  result.mutable_termination()->set_detail("HighsModelStatus was kEmptyModel");
+//  if (feasible) {
+//    auto solution = result.add_solutions()->mutable_primal_solution();
+//    solution->set_objective_value(objective_offset);
+//    solution->set_feasibility_status(SOLUTION_STATUS_FEASIBLE);
+//    *result.mutable_termination() =
+//        OptimalTerminationProto(objective_offset, objective_offset);
+//  } else {
+//    // If the primal problem has no variables, the dual problem is unconstrained
+//    // and thus always feasible.
+//    *result.mutable_termination() =
+//        InfeasibleTerminationProto(is_maximize, /*dual_feasibility_status=*/
+//                                   FEASIBILITY_STATUS_FEASIBLE);
+//    // It is probably possible to return a ray here as well.
+//  }
+//  return result;
+//}
+//
+//InvertedBounds MosekSolver::ListInvertedBounds() {
+//  const auto find_crossed =
+//      [](const absl::flat_hash_map<int64_t, IndexAndBound>& id_to_bound_data) {
+//        std::vector<int64_t> result;
+//        for (const auto& [id, bound_data] : id_to_bound_data) {
+//          if (bound_data.bounds_cross()) {
+//            result.push_back(id);
+//          }
+//        }
+//        absl::c_sort(result);
+//        return result;
+//      };
+//  return {.variables = find_crossed(variable_data_),
+//          .linear_constraints = find_crossed(lin_con_data_)};
+//}
+//
+//absl::StatusOr<std::optional<BasisProto>> MosekSolver::ExtractBasis() {
+//  const HighsInfo& highs_info = highs_->getInfo();
+//  const HighsBasis& highs_basis = highs_->getBasis();
+//  const HighsSolution& highs_solution = highs_->getSolution();
+//  if (highs_info.basis_validity != ::kBasisValidityValid) {
+//    return std::nullopt;
+//  }
+//  // We need the primal/dual solution to try and infer a more precise status
+//  // for varaiables and constraints listed as kNonBasic.
+//  if (!highs_solution.value_valid || !highs_solution.dual_valid) {
+//    return std::nullopt;
+//  }
+//  // Make sure the solution is the right size
+//  RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_value))
+//      << "invalid highs_solution.col_value";
+//  RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_dual))
+//      << "invalid highs_solution.col_dual";
+//  // Make sure the basis is the right size
+//  RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_basis.col_status))
+//      << "invalid highs_basis.col_status";
+//  RETURN_IF_ERROR(EnsureOneEntryPerLinearConstraint(highs_basis.row_status))
+//      << "invalid highs_basis.row_status";
+//  BasisProto basis;
+//
+//  if (highs_->getModelStatus() == HighsModelStatus::kOptimal) {
+//    basis.set_basic_dual_feasibility(SOLUTION_STATUS_FEASIBLE);
+//  } else if (highs_info.dual_solution_status == kSolutionStatusInfeasible) {
+//    basis.set_basic_dual_feasibility(SOLUTION_STATUS_INFEASIBLE);
+//  } else {
+//    // TODO(b/272767311): we need to do more to fill this in properly.
+//    basis.set_basic_dual_feasibility(SOLUTION_STATUS_UNDETERMINED);
+//  }
+//  for (const int64_t var_id : SortedMapKeys(variable_data_)) {
+//    const IndexAndBound& index_and_bounds = variable_data_.at(var_id);
+//    const double var_value = highs_solution.col_value[index_and_bounds.index];
+//    OR_ASSIGN_OR_RETURN3(
+//        const std::optional<BasisStatusProto> status,
+//        ToBasisStatus(highs_basis.col_status[variable_data_.at(var_id).index],
+//                      index_and_bounds.lb, index_and_bounds.ub, var_value),
+//        _ << "invalid highs_basis.col_status for variable with id: " << var_id);
+//    if (!status.has_value()) {
+//      return std::nullopt;
+//    }
+//    basis.mutable_variable_status()->add_ids(var_id);
+//    basis.mutable_variable_status()->add_values(*status);
+//  }
+//  for (const int64_t lin_con_id : SortedMapKeys(lin_con_data_)) {
+//    const IndexAndBound& index_and_bounds = lin_con_data_.at(lin_con_id);
+//    const double dual_value = highs_solution.row_dual[index_and_bounds.index];
+//    OR_ASSIGN_OR_RETURN3(
+//        const std::optional<BasisStatusProto> status,
+//        ToBasisStatus(highs_basis.row_status[index_and_bounds.index],
+//                      index_and_bounds.lb, index_and_bounds.ub, dual_value),
+//        _ << "invalid highs_basis.row_status for linear constraint with id: "
+//          << lin_con_id);
+//    if (!status.has_value()) {
+//      return std::nullopt;
+//    }
+//    basis.mutable_constraint_status()->add_ids(lin_con_id);
+//    basis.mutable_constraint_status()->add_values(*status);
+//  }
+//  return basis;
+//}
+//
+//absl::StatusOr<bool> MosekSolver::PrimalRayReturned() const {
+//  if (!highs_->hasInvert()) {
+//    return false;
+//  }
+//  bool has_primal_ray = false;
+//  // Note getPrimalRay may return without modifying has_primal_ray, in which
+//  // case it will remain at its default false value.
+//  RETURN_IF_ERROR(ToStatus(highs_->getPrimalRay(has_primal_ray,
+//                                                /*primal_ray_value=*/nullptr)));
+//  return has_primal_ray;
+//}
+//
+//absl::StatusOr<bool> MosekSolver::DualRayReturned() const {
+//  if (!highs_->hasInvert()) {
+//    return false;
+//  }
+//  bool has_dual_ray = false;
+//  // Note getPrimalRay may return without modifying has_dual_ray, in which
+//  // case it will remain at its default false value.
+//  RETURN_IF_ERROR(ToStatus(highs_->getDualRay(has_dual_ray,
+//                                              /*dual_ray_value=*/nullptr)));
+//  return has_dual_ray;
+//}
+//
+//absl::StatusOr<MosekSolver::SolutionsAndClaims>
+//MosekSolver::ExtractSolutionAndRays(
+//    const ModelSolveParametersProto& model_params) {
+//  const HighsInfo& highs_info = highs_->getInfo();
+//  const HighsSolution& highs_solution = highs_->getSolution();
+//  SolutionsAndClaims solution_and_claims;
+//  if (highs_info.primal_solution_status == ::kSolutionStatusFeasible &&
+//      !highs_solution.value_valid) {
+//    return absl::InternalError(
+//        "highs_info.primal_solution_status==::kSolutionStatusFeasible, but no "
+//        "valid primal solution returned");
+//  }
+//  if (highs_solution.value_valid || highs_solution.dual_valid) {
+//    SolutionProto& solution =
+//        solution_and_claims.solutions.emplace_back(SolutionProto());
+//    if (highs_solution.value_valid) {
+//      RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_value))
+//          << "invalid highs_solution.col_value";
+//      PrimalSolutionProto& primal_solution =
+//          *solution.mutable_primal_solution();
+//      primal_solution.set_objective_value(highs_info.objective_function_value);
+//      OR_ASSIGN_OR_RETURN3(const SolutionStatusProto primal_solution_status,
+//                           ToSolutionStatus(highs_info.primal_solution_status),
+//                           _ << "invalid highs_info.primal_solution_status");
+//      primal_solution.set_feasibility_status(primal_solution_status);
+//      solution_and_claims.solution_claims
+//          .highs_returned_primal_feasible_solution =
+//          primal_solution.feasibility_status() == SOLUTION_STATUS_FEASIBLE;
+//      for (const int64_t var_id : SortedMapKeys(variable_data_)) {
+//        primal_solution.mutable_variable_values()->add_ids(var_id);
+//        primal_solution.mutable_variable_values()->add_values(
+//            highs_solution.col_value[variable_data_.at(var_id).index]);
+//      }
+//    }
+//    if (highs_solution.dual_valid) {
+//      RETURN_IF_ERROR(EnsureOneEntryPerVariable(highs_solution.col_dual))
+//          << "invalid highs_solution.col_dual";
+//      RETURN_IF_ERROR(
+//          EnsureOneEntryPerLinearConstraint(highs_solution.row_dual))
+//          << "invalid highs_solution.row_dual";
+//      DualSolutionProto& dual_solution = *solution.mutable_dual_solution();
+//      dual_solution.set_objective_value(highs_info.objective_function_value);
+//      OR_ASSIGN_OR_RETURN3(const SolutionStatusProto dual_solution_status,
+//                           ToSolutionStatus(highs_info.dual_solution_status),
+//                           _ << "invalid highs_info.dual_solution_status");
+//      dual_solution.set_feasibility_status(dual_solution_status);
+//      solution_and_claims.solution_claims
+//          .highs_returned_dual_feasible_solution =
+//          dual_solution.feasibility_status() == SOLUTION_STATUS_FEASIBLE;
+//      for (const int64_t var_id : SortedMapKeys(variable_data_)) {
+//        dual_solution.mutable_reduced_costs()->add_ids(var_id);
+//        dual_solution.mutable_reduced_costs()->add_values(
+//            highs_solution.col_dual[variable_data_.at(var_id).index]);
+//      }
+//      for (const int64_t lin_con_id : SortedMapKeys(lin_con_data_)) {
+//        dual_solution.mutable_dual_values()->add_ids(lin_con_id);
+//        dual_solution.mutable_dual_values()->add_values(
+//            highs_solution.row_dual[lin_con_data_.at(lin_con_id).index]);
+//      }
+//    }
+//    ASSIGN_OR_RETURN(std::optional<BasisProto> basis_proto,
+//                     MosekSolver::ExtractBasis());
+//    if (basis_proto.has_value()) {
+//      *solution.mutable_basis() = *std::move(basis_proto);
+//    }
+//    ApplyAllFilters(model_params, solution);
+//  }
+//
+//  ASSIGN_OR_RETURN(
+//      solution_and_claims.solution_claims.highs_returned_primal_ray,
+//      PrimalRayReturned());
+//  ASSIGN_OR_RETURN(solution_and_claims.solution_claims.highs_returned_dual_ray,
+//                   DualRayReturned());
+//
+//  return solution_and_claims;
+//}
+
+// Notes on `Update()`.
+//
+// # Deleting items
+// We will not actually delete variables or constraints from the Task since that
+// will change indexes of all successive items. Instead we will remove non-zeros
+// and bounds from the deleted items. 
+absl::StatusOr<bool> MosekModel::Update(const ModelUpdateProto& model_update) {
+  for (auto id : model_update.deleted_variable_ids()) msk.ClearVariable(variable_map[id]);
+  for (auto id : model_update.deleted_linear_constraint_ids()) msk.ClearConstraint(linconstr_map[id]);
+
+  if (!AddVariables(model_update.new_variables()).ok()) return false;
+  if (!Variables(model_update.new_variables())) return false;
+  if (!UpdateVariables(model_update.variable_updates())) return false;
+  if (!AddConstraints(model_update.new_linear_constraints())) return false;
+  if (!UpdateConstraints(model_update.linear_constraint_updates(),
+        model_update.linear_constraint_matrix_updates())) return false;
+  if (!UpdateObjective(mosek_update.objective_updates())) return false;
+  for (const auto & conupd : model_update.second_order_cone_constraint_updates()) {
+    if (!UpdateConeConstraint(conupd)) return false;
+  }
+  for (const auto & conupd : model_update.indicator_constraint_updates()) {
+    if (!UpdateIndicatorConstraint(conupd)) return false;
+  }
+}
+
+absl::Status MosekModel::UpdateVariables(const VariableUpdatesProto & varupds) {
+  for (int64_t i = 0, n = varupds.lower_bounds().size_ids; i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateVarLowerBound(variable_map[varupds.lower_bounds().ids(i)], varupds.lower_bounds().values(i)));
+  }
+  for (int64_t i = 0, n = varupds.upper_bounds().size_ids; i < n; ++i) {
+    RETURN_OF_ERROR(msk.UpdateVarUpperBound(variable_map[varupds.upper_bounds().ids(i)], varupds.upper_bounds().values(i)));
+  }
+  for (int64_t i = 0, n = varupds.integers().size_ids; i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateVariableType(variable_map[varupds.upper_bounds().ids(i)], varupds.integer().values(i)));
+  }
+}
+absl::Status MosekModel::UpdateConstraints(const ConstraintsUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds) {
+  for (int64_t i = 0, n = conupds.lower_bounds().size_ids; i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateConstraintLowerBound(coniable_map[conupds.lower_bounds().ids(i)], conupds.lower_bounds().values(i)));
+  }
+  for (int64_t i = 0, n = conupds.upper_bounds().size_ids; i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateConstraintUpperBound(coniable_map[conupds.upper_bounds().ids(i)], conupds.upper_bounds().values(i)));
+  }
+
+  size_t n = lincofupds.size_ids;
+  std::vector<Mosek::ConstaintIndex> subi(n);
+  std::vector<Mosek::VariableIndex> subj(n); 
+  std::vector<double> valij(n);
+  { int i = 0; for (auto id : lincofupds.row_ids()) { subi[i] = linconstr_map[id]; ++i; } }
+  { int i = 0; for (auto id : lincofupds.column_ids()) { subj[i] = variable_map[id]; ++i; } }
+  { int i = 0; for (auto c  : lincofupds.coefficients()) { valij[i] = c; ++i; } }
+
+  RETURN_IF_ERROR(msk.UpdateA(subi,subj,valij));
+}
+absl::Status MosekModel::UpdateObjective(const ObjectiveUpdatesProto & objupds) {
+}
+absl::Status MosekModel::UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds) {
+}
+absl::Status MosekModel::UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds) {
+}
+
+
+
+
+
+
+
+absl::StatusOr<std::unique_ptr<SolverInterface>> Mosek::New(
     const ModelProto& model, const InitArgs&) {
   RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
   
@@ -803,122 +1032,20 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> HighsSolver::New(
            << "Mosek does not support models with SOS constraints";
   }
 
-  Mosek msk;
-  msk.PutName(model.name())
+  std::unique_ptr<MosekSolver> mskslv(new MosekSover());
+  mskslv->msk.PutName(model.name());
 
-  const int num_vars = model.variables().ids_size
+  RETURN_IF_ERROR(msk->AddVariables(model.variables()));
+  RETURN_IF_ERROR(msk->ReplaceObjective(model.objective()));
+  RETURN_IF_ERROR(msk->AddConstraints(model.constraints()));
+  RETURN_IF_ERROR(msk->AddIndicatorConstraints(model.indicator_constraints()));
 
-  absl::flat_hash_map<int64_t, int> variable_map;
-  { int i = 0; for (const auto & v : model.variables().ids()) variable[v] = i; }
+  std::unique_ptr<SolverInterface> res(std::move(mskslv));
 
-  { // variables
-    std::vector<double>  lbx(numvars);
-    std::vector<double>  ubx(numvars);
-    { int i = 0; for (const auto & v : model.variables().lower_bounds()) lbx[i++]  = v; }
-    { int i = 0; for (const auto & v : model.variables().upper_bounds()) ubx[i++]  = v; }
-    
-    RETURN_IF_ERROR(msk.AppendVars(lbx,ubx));
-
-    {
-      int i = 0; 
-      for (const bool is_integer : model.variables().integers()) {
-        if (is_integer) {
-          RETURN_IF_ERROR(msk.PutVarType(ids[i],true));
-        }
-        ++i;
-      }
-    }
-  }
-
-  { // objective
-    msk.PutObjName(model.objective().name());
-    msk.PutObjectiveSense(model.maximize());
-    auto objcof = model.objective().linear_coefficients();
-    msk.PutCFix(model.objective().offset());
-    std::vector<double> c(num_vars);
-    auto n = objcof.ids_size;
-    for (int64_t i = 0; i < n; ++i) {
-      c[objcof.ids(i)] = objcof.values(i);
-    }
-    msk.PutC(c);
-  }
-
-  absl::flat_hash_map<int64_t, int> linconstr_map;
-  auto numcon = model.linear_constraints().size_ids;
-  { // linear constraints
-    { int i = 0; for (const auto & id : model.linear_constraints().ids()) linconstr_map[id] = i++; }
-    std::vector<double> clb(numcon);
-    std::vector<double> cub(numcon);
-    { int i = 0; for (const auto & b : model.linear_constraints().lower_bounds()) clb[i++] = b; }
-    { int i = 0; for (const auto & b : model.linear_constraints().upper_bounds()) cub[i++] = b; }
-    msg.AppendCons(clb,cub);
-
-    { 
-      int i = 0; for (const auto & name : model.linear_constraints().names()) {
-        msk.PutConName(i,name.c_str());
-        ++i;
-      }
-    }
-
-    auto adata = model.linear_constraint_matrix();
-    size_t nnz = adata.size_row_ids;
-    std::vector<Mosek::VariableIndex> subj; subj.reserve(nnz);
-    std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
-    std::vector<double> valij; valij.reserve(nnz);
-
-    for (const auto id : adata.row_ids())
-      subj.push_back(variable_map[id]);
-    for (const auto id : adata.column_ids())
-      subi.push_back(linconstr_map[id]);
-    for (const auto c : adata.coefficients())
-      valij.push_back(c);
-    RETURN_IF_ERROR(msk.PutAIJList(asubi,asubj,valij));
-  }
-
-  absl::flat_hash_map<int64_t, int64_t> indconstr_map;
-  {   
-    int i = 0;
-    for (const auto & [id, con] : model.indicator_constraints()) {
-      linconstr_map[id] = i++; }
-      
-    }
-  }
-
-  
-
-  lp.a_matrix_.format_ = MatrixFormat::kRowwise;
-  lp.a_matrix_.num_col_ = num_vars;
-  lp.a_matrix_.num_row_ = num_lin_cons;
-  lp.a_matrix_.start_.clear();  // This starts out as {0} by default.
-  const SparseDoubleMatrixProto& lin_con_mat = model.linear_constraint_matrix();
-  int mat_index = 0;
-  for (int highs_con = 0; highs_con < lin_con_data.size(); highs_con++) {
-    lp.a_matrix_.start_.push_back(mat_index);
-    while (mat_index < lin_con_mat.row_ids_size() &&
-           lin_con_data.at(lin_con_mat.row_ids(mat_index)).index <= highs_con) {
-      mat_index++;
-    }
-  }
-  lp.a_matrix_.start_.push_back(lin_con_mat.row_ids_size());
-  for (int i = 0; i < lin_con_mat.row_ids_size(); ++i) {
-    const int var = variable_data.at(lin_con_mat.column_ids(i)).index;
-    const double coef = lin_con_mat.coefficients(i);
-    lp.a_matrix_.index_.push_back(var);
-    lp.a_matrix_.value_.push_back(coef);
-  }
-  auto highs = std::make_unique<Highs>();
-  // Disable output immediately, calling passModel() below will generate output
-  // otherwise.
-  HighsOptions disable_output;
-  disable_output.output_flag = false;
-  disable_output.log_to_console = false;
-  RETURN_IF_ERROR(ToStatus(highs->passOptions(disable_output)));
-  RETURN_IF_ERROR(ToStatus(highs->passModel(std::move(highs_model))));
-  return absl::WrapUnique(new HighsSolver(
-      std::move(highs), std::move(variable_data), std::move(lin_con_data)));
+  return absl::WrapUnique(res);
 }
 
-absl::StatusOr<SolveResultProto> HighsSolver::Solve(
+absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     const SolveParametersProto& parameters,
     const ModelSolveParametersProto& model_parameters,
     MessageCallback message_cb, const CallbackRegistrationProto&, Callback,
@@ -1016,12 +1143,12 @@ absl::StatusOr<SolveResultProto> HighsSolver::Solve(
   return result;
 }
 
-absl::StatusOr<bool> HighsSolver::Update(const ModelUpdateProto&) {
+absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto&) {
   return false;
 }
 
 absl::StatusOr<ComputeInfeasibleSubsystemResultProto>
-HighsSolver::ComputeInfeasibleSubsystem(const SolveParametersProto&,
+MosekSolver::ComputeInfeasibleSubsystem(const SolveParametersProto&,
                                         MessageCallback,
                                         const SolveInterrupter*) {
   return absl::UnimplementedError(
