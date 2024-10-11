@@ -37,14 +37,6 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "io/HighsIO.h"
-#include "lp_data/HConst.h"
-#include "lp_data/HStruct.h"
-#include "lp_data/HighsInfo.h"
-#include "lp_data/HighsLp.h"
-#include "lp_data/HighsModelUtils.h"
-#include "lp_data/HighsOptions.h"
-#include "lp_data/HighsStatus.h"
 #include "ortools/base/protoutil.h"
 #include "ortools/base/status_builder.h"
 #include "ortools/base/status_macros.h"
@@ -61,7 +53,6 @@
 #include "ortools/math_opt/solvers/message_callback_data.h"
 #include "ortools/util/solve_interrupter.h"
 #include "ortools/util/status_macros.h"
-#include "util/HighsInt.h"
 
 namespace operations_research::math_opt {
 namespace {
@@ -73,6 +64,7 @@ namespace {
 //    .integer_variables = SupportType::kSupported,
 //    .quadratic_objectives = SupportType::kNotImplemented};
 
+#if 0
 absl::Status ToStatus(const HighsStatus status) {
   switch (status) {
     case HighsStatus::kOk:
@@ -429,7 +421,7 @@ absl::StatusOr<SolutionStatusProto> ToSolutionStatus(
 
 
 
-
+#endif
 
 
 
@@ -514,6 +506,8 @@ absl::Status MosekSolver::AddConstraints(const ConstraintsProto & cons) {
   for (const auto c : adata.coefficients())
     valij.push_back(c);
   RETURN_IF_ERROR(msk.PutAIJList(asubi,asubj,valij));
+
+  return absl::OkStatus();
 } // MosekSolver::AddConstraints
 
 absl::Status MosekSolver::AddIndicatorConstraints(
@@ -536,6 +530,7 @@ absl::Status MosekSolver::AddIndicatorConstraints(
 
     msk.PutDJCName(*djci,con.name());
   }
+  return absl::OkStatus();
 } // MosekSolver::AddIndicatorConstraints
 
 absl::Status MosekSolver::AddConicConstraints(
@@ -579,6 +574,7 @@ absl::Status MosekSolver::AddConicConstraints(
 
     RETURN_IF_ERROR(msk.PutAccName(*acci, con.name()));
   }
+  return absl::OkStatus();
 }
 
 
@@ -967,6 +963,7 @@ absl::StatusOr<bool> MosekModel::Update(const ModelUpdateProto& model_update) {
   for (const auto & conupd : model_update.indicator_constraint_updates()) {
     if (!UpdateIndicatorConstraint(conupd)) return false;
   }
+  return true;
 }
 
 absl::Status MosekModel::UpdateVariables(const VariableUpdatesProto & varupds) {
@@ -979,6 +976,7 @@ absl::Status MosekModel::UpdateVariables(const VariableUpdatesProto & varupds) {
   for (int64_t i = 0, n = varupds.integers().size_ids; i < n; ++i) {
     RETURN_IF_ERROR(msk.UpdateVariableType(variable_map[varupds.upper_bounds().ids(i)], varupds.integer().values(i)));
   }
+  return absl::OkStatus();
 }
 absl::Status MosekModel::UpdateConstraints(const ConstraintsUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds) {
   for (int64_t i = 0, n = conupds.lower_bounds().size_ids; i < n; ++i) {
@@ -991,18 +989,40 @@ absl::Status MosekModel::UpdateConstraints(const ConstraintsUpdatesProto & conup
   size_t n = lincofupds.size_ids;
   std::vector<Mosek::ConstaintIndex> subi(n);
   std::vector<Mosek::VariableIndex> subj(n); 
-  std::vector<double> valij(n);
+  std::vector<double> valij(lincofupds.coefficients().begin(),lincofupds.coefficients().end());
   { int i = 0; for (auto id : lincofupds.row_ids()) { subi[i] = linconstr_map[id]; ++i; } }
   { int i = 0; for (auto id : lincofupds.column_ids()) { subj[i] = variable_map[id]; ++i; } }
-  { int i = 0; for (auto c  : lincofupds.coefficients()) { valij[i] = c; ++i; } }
 
   RETURN_IF_ERROR(msk.UpdateA(subi,subj,valij));
+  return absl::OkStatus();
 }
 absl::Status MosekModel::UpdateObjective(const ObjectiveUpdatesProto & objupds) {
+  std::vector<double> cof(objupds.linear_coefficients().begin(),objupds.linear_coefficients().end());
+  std::vecor<Mosek::VariableIndex> subj; subj.reserve(cof.size());
+  for (auto id : objupds.coefficients().ids()) subj.push_back(variable_map[id]);
+
+  RETURN_IF_ERROR(msk.UpdateObjectiveSense(objupds.direction_update()));
+  RETURN_IF_ERROR(msk.UpdateObjective(objupds.offset_update(),subj,cof));
+
+  return absl::OkStatus();
 }
 absl::Status MosekModel::UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds) {
+  for (auto id : conupds.deleted_constraint_ids()) {
+    RETURN_IF_ERROR(msk.ClearConeConstraint(coneconstr_map[id]));
+  }
+
+  RETURN_IF_ERROR(AddConicConstraints(conupds.new_constraints()));
+
+  return absl::OkStatus();
 }
 absl::Status MosekModel::UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds) {
+  for (auto id : conupds.deleted_constraint_ids()) {
+    RETURN_IF_ERROR(msk.ClearDisjunctiveConstraint(indconstr_map[id]));
+  }
+  
+  RETURN_IF_ERROR(AddConicConstraints(conupds.new_constraints()));
+
+  return absl::OkStatus();
 }
 
 
@@ -1032,7 +1052,7 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> Mosek::New(
            << "Mosek does not support models with SOS constraints";
   }
 
-  std::unique_ptr<MosekSolver> mskslv(new MosekSover());
+  std::unique_ptr<MosekSolver> mskslv(new MosekSolver());
   mskslv->msk.PutName(model.name());
 
   RETURN_IF_ERROR(msk->AddVariables(model.variables()));
@@ -1042,14 +1062,46 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> Mosek::New(
 
   std::unique_ptr<SolverInterface> res(std::move(mskslv));
 
-  return absl::WrapUnique(res);
+  return res;
 }
 
 absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     const SolveParametersProto& parameters,
     const ModelSolveParametersProto& model_parameters,
-    MessageCallback message_cb, const CallbackRegistrationProto&, Callback,
+    MessageCallback message_cb, 
+    const CallbackRegistrationProto&, 
+    Callback cb,
     const SolveInterrupter* const) {
+   
+  // Solve parameters that we support:
+  // - google.protobuf.Duration time_limit
+  // - optional int64 iteration_limit
+  // - optional int64 node_limit
+  // - optional double objective_limit
+  // - bool enable_output
+  // - optional int32 threads
+  // - optional double absolute_gap_tolerance
+  // - optional double relative_gap_tolerance
+  // - LPAlgorithmProto lp_algorithm
+  // Solve parameters that we may support:
+  // - optional double cutoff_limit
+  // - optional double best_bound_limit
+  // Solve parameters that we do not support:
+  // - optional int32 solution_pool_size
+  // - optional int32 solution_limit
+  // - optional int32 random_seed
+  // - EmphasisProto presolve
+  // - EmphasisProto cuts
+  // - EmphasisProto heuristics
+  // - EmphasisProto scaling
+
+  // Model parameters
+  //
+  //
+  //
+  // TODO
+
+#if 0
   const absl::Time start = absl::Now();
   auto set_solve_time = [&start](SolveResultProto& result) -> absl::Status {
     const absl::Duration solve_time = absl::Now() - start;
@@ -1141,10 +1193,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
 
   RETURN_IF_ERROR(set_solve_time(result));
   return result;
-}
-
-absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto&) {
-  return false;
+#endif
 }
 
 absl::StatusOr<ComputeInfeasibleSubsystemResultProto>

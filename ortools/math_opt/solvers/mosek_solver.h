@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-#include "mosek.h"
+#include "mosek/mosekwrp.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"

@@ -18,7 +18,7 @@ class Mosek {
 
     using VariableIndex = int32_t;
     using ConstraintIndex = int32_t;
-    using DjcConstraintIndex = int64_t;
+    using DisjunctiveConstraintIndex = int64_t;
     using ConeConstraintIndex = int64_t;
 
 
@@ -44,17 +44,23 @@ class Mosek {
                             const std::vector<VariableIndex>& subj,
                             const std::vector<double>& valij);
 
-    absl::StatusOr<DjcConstraintIndex> AppendIndicatorConstraint(
+    absl::StatusOr<DisjunctiveConstraintIndex> AppendIndicatorConstraint(
         bool negate,
         VariableIndex indvar, const std::vector<VariableIndex>& subj,
         const std::vector<double>& cof, double lb, double ub);
-    absl::Status PutDJCName(DjcConstraintIndex djci, const std::string & name);
+    absl::Status PutDJCName(DisjunctiveConstraintIndex djci, const std::string & name);
     
     absl::StatusOr<ConeConstraintIndex> AppendConeConstraint(
         ConeType ct, const std::vector<int64_t>& ptr,
         const std::vector<VariableIndex>& subj, const std::vector<double>& cof,
         const std::vector<double>& b);
-    
+
+    // Delete-ish
+    absl::Status ClearVariable(VariableIndex j);
+    absl::Status ClearConstraint(ConstraintIndex i);
+    absl::Status ClearConeConstraint(ConeConstraintIndex i);
+    absl::Status ClearDisjunctiveConstraint(DisjunctiveConstraintIndex i);
+
     // Update
     
     absl::Status UpdateVariableLowerBound(VariableIndex j, double b);
@@ -62,6 +68,10 @@ class Mosek {
     absl::Status UpdateVariableType(VariableIndex j, bool is_integer);
     absl::Status UpdateConstraintLowerBound(ConstraintIndex i, double b);
     absl::Status UpdateConstraintUpperBound(ConstraintIndex i, double b);
+    absl::Status UpdateObjectiveSense(bool maximize);
+    absl::Status UpdateObjective(double fixterm,
+                                 const std::vector<VariableIndex>& subj,
+                                 const std::vector<double>& cof);
     // Query
     int NumVar() const;
     int NumCon() const;
