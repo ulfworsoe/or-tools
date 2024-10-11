@@ -859,10 +859,32 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> HighsSolver::New(
         ++i;
       }
     }
+
+    auto adata = model.linear_constraint_matrix();
+    size_t nnz = adata.size_row_ids;
+    std::vector<Mosek::VariableIndex> subj; subj.reserve(nnz);
+    std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
+    std::vector<double> valij; valij.reserve(nnz);
+
+    for (const auto id : adata.row_ids())
+      subj.push_back(variable_map[id]);
+    for (const auto id : adata.column_ids())
+      subi.push_back(linconstr_map[id]);
+    for (const auto c : adata.coefficients())
+      valij.push_back(c);
+    RETURN_IF_ERROR(msk.PutAIJList(asubi,asubj,valij));
   }
 
+  absl::flat_hash_map<int64_t, int64_t> indconstr_map;
+  {   
+    int i = 0;
+    for (const auto & [id, con] : model.indicator_constraints()) {
+      linconstr_map[id] = i++; }
+      
+    }
+  }
 
-
+  
 
   lp.a_matrix_.format_ = MatrixFormat::kRowwise;
   lp.a_matrix_.num_col_ = num_vars;
