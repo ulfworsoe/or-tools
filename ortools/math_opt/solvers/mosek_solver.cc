@@ -13,6 +13,7 @@
 
 
 #include "ortools/math_opt/solvers/mosek_solver.h"
+#include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
@@ -1077,15 +1078,15 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   // - google.protobuf.Duration time_limit
   // - optional int64 iteration_limit
   // - optional int64 node_limit
-  // - optional double objective_limit
+  // - optional double cutoff_limit
   // - bool enable_output
   // - optional int32 threads
   // - optional double absolute_gap_tolerance
   // - optional double relative_gap_tolerance
   // - LPAlgorithmProto lp_algorithm
   // Solve parameters that we may support:
-  // - optional double cutoff_limit
   // - optional double best_bound_limit
+  // - optional double objective_limit
   // Solve parameters that we do not support:
   // - optional int32 solution_pool_size
   // - optional int32 solution_limit
@@ -1095,11 +1096,103 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   // - EmphasisProto heuristics
   // - EmphasisProto scaling
 
-  // Model parameters
-  //
-  //
-  //
-  // TODO
+  
+  double dpar_optimizer_max_time = msk.GetParam(MSK_DPAR_OPTIMIZER_MAX_TIME);
+  if (parameters.has_time_limit()) {
+    OR_ASSIGN_OR_RETURN3(
+        const absl::Duration time_limit,
+        util_time::DecodeGoogleApiProto(parameters.time_limit()),
+        _ << "invalid time_limit value for HiGHS.");
+    msk.PutDoubleParam(MSK_DPAR_OPTIMIZER_MAX_TIME, absl::ToDoubleSeconds(time_limit));
+  }
+
+  int ipar_intpnt_max_iterations = msk.GetParam(MSK_IPAR_INTPNT_MAX_ITERATIONS);
+  int ipar_sim_max_iterations = msk.GetParam(MSK_IPAR_SIM_MAX_ITERATIONS);
+  if (parameters.has_iteration_limit()) {
+    ASSIGN_OR_RETURN(
+        const int iter_limit,
+        SafeIntCast(parameters.iteration_limit(), "iteration_limit"));
+
+    msk.PutIntParam(MSK_IPAR_INTPNT_MAX_ITERATIONS, iter_limit);
+    msk.PutIntParam(MSK_IPAR_SIM_MAX_ITERATIONS, iter_limit);
+  }
+  
+  // Not supported in MOSEK 10.2
+  //int ipar_mio_
+  //if (parameters.has_node_limit()) {
+  //  ASSIGN_OR_RETURN(
+  //      const int node_limit,
+  //      SafeIntCast(parameters.node_limit(), "node_limit"));
+  //  msk.PutIntParam(MSK_IPAR_MIO__MAX_NODES, node_limit);
+  //}
+ 
+  // Not supported by MOSEK?
+  //if (parameters.has_cutoff_limit()) {
+  //}
+  double dpar_upper_obj_cut = msk.GetParam(MSK_DPAR_UPPER_OBJ_CUT);
+  double dpar_lower_obj_cut = msk.GetParam(MSK_DPAR_LOWER_OBJ_CUT);
+  if (parameters.has_objective_limit()) {
+    if (msk.IsMaximize()) 
+      msk.PutDoubleParam(MSK_DPAR_UPPER_OBJ_CUT, parameters.cutoff_limit());
+    else
+      msk.PutDoubleParam(MSK_DPAR_LOWER_OBJ_CUT, parameters.cutoff_limit());
+  }
+
+  int ipar_num_threads = msk.GetParam(MSK_IPAR_NUM_THREADS);
+  if (parameters.has_threads()) {
+    msk.PutIntParam(MSK_IPAR_NUM_THREADS, parameters.threads());
+  }
+
+  double dpar_mio_tol_abs_gap = msk.GetParam(MSK_DPAR_MIO_TOL_ABS_GAP);
+  if (parameters.has_absolute_gap_tolerance()) {
+    msk.PutDoubleParameter(MSK_DPAR_MIO_TOL_ABS_GAP, parameters.absolute_gap_tolerance());
+  }
+  
+  double dpar_mio_tol_rel_gap = msk.GetParam(MSK_DPAR_MIO_TOL_REL_GAP);
+  double dpar_intpnt_tol_rel_gap = msk.GetDoubleParam(MSK_DPAR_INTPNT_TOL_REL_GAP);
+  double dpar_intpnt_co_tol_rel_gap = msk.GetDoubleParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP);
+  if (parameters.has_relative_gap_tolerance()) {
+    msk.PutDoubleParameter(MSK_DPAR_INTPNT_TOL_REL_GAP, parameters.absolute_gap_tolerance());
+    msk.PutDoubleParameter(MSK_DPAR_INTPNT_CO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
+    msk.PutDoubleParameter(MSK_DPAR_MIO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
+  }
+
+  int ipar_optimizer = msk.GetParam(MSK_IPAR_OPTIMIZER);
+  switch (parameters.lp_algorithm()) {
+    case LP_ALGORITHM_BARRIER:
+      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_INTPNT);
+      break;
+    case LP_ALGORITHM_DUAL_SIMPLEX:
+      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_DUAL_SIMPLEX);
+      break;
+    case LP_ALGORITHM_PRIMAL_SIMPLEX:
+      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_PRIMAL_SIMPLEX);
+      break;
+    default:
+      // use default auto select, usually intpnt
+      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_FREE);
+      break;
+  }
+
+  // TODO: parameter enable_output
+  // TODO optimize
+
+  // Reset Parameters
+
+  msk.PutParam(MSK_DPAR_OPTIMIZER_MAX_TIME,dpar_optimizer_max_time);
+  msk.PutParam(MSK_IPAR_INTPNT_MAX_ITERATIONS,ipar_intpnt_max_iterations);
+  msk.PutParam(MSK_IPAR_SIM_MAX_ITERATIONS,ipar_sim_max_iterations);
+  msk.PutParam(MSK_DPAR_UPPER_OBJ_CUT,dpar_upper_obj_cut);
+  msk.PutParam(MSK_DPAR_LOWER_OBJ_CUT,dpar_lower_obj_cut);
+  msk.PutParam(MSK_IPAR_NUM_THREADS,ipar_num_threads);
+  msk.PutParam(MSK_DPAR_MIO_TOL_ABS_GAP,dpar_mio_tol_abs_gap);
+  msk.PutParam(MSK_DPAR_MIO_TOL_REL_GAP,dpar_mio_tol_rel_gap);
+  msk.PutParam(MSK_DPAR_INTPNT_TOL_REL_GAP,dpar_intpnt_tol_rel_gap);
+  msk.PutParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP,dpar_intpnt_co_tol_rel_gap);
+
+
+
+
 
 #if 0
   const absl::Time start = absl::Now();

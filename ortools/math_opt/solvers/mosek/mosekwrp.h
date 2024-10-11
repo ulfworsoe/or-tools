@@ -72,9 +72,15 @@ class Mosek {
     absl::Status UpdateObjective(double fixterm,
                                  const std::vector<VariableIndex>& subj,
                                  const std::vector<double>& cof);
+
+    void PutParam(MSKiparame par, int value);
+    void PutParam(MSKdparame par, double value);
     // Query
     int NumVar() const;
     int NumCon() const;
+    bool IsMaximize() const;
+    double GetParam(MSKdparame dpar) const;
+    int GetParam(MSKiparame ipar) const;
 
   private:    
     static void delete_msk_task_func(MSKtask_t);
