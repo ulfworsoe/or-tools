@@ -21,9 +21,9 @@ class Mosek {
     typedef int64_t DisjunctiveConstraintIndex ;
     typedef int64_t ConeConstraintIndex        ;
 
-
-    Mosek();
     Mosek(Mosek && m);
+
+    static Mosek * Create();
 
     void PutName(const std::string & name);
     void PutObjName(const std::string & name);
@@ -86,6 +86,8 @@ class Mosek {
 
   private:    
     static void delete_msk_task_func(MSKtask_t);
+
+    Mosek(MSKtask_t task);
 
     std::unique_ptr<msktaskt,decltype(delete_msk_task_func)*> task;
 
