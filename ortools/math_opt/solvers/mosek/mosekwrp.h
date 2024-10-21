@@ -16,10 +16,10 @@ class Mosek {
       RotatedSecondOrderCone
     };
 
-    using VariableIndex = int32_t;
-    using ConstraintIndex = int32_t;
-    using DisjunctiveConstraintIndex = int64_t;
-    using ConeConstraintIndex = int64_t;
+    typedef int32_t VariableIndex              ;
+    typedef int32_t ConstraintIndex            ;
+    typedef int64_t DisjunctiveConstraintIndex ;
+    typedef int64_t ConeConstraintIndex        ;
 
 
     Mosek();
@@ -27,8 +27,8 @@ class Mosek {
 
     void PutName(const std::string & name);
     void PutObjName(const std::string & name);
-    absl::Status PutVarName(VariableIndex j, const std::string & name);
-    absl::Status PutConName(ConstraintIndex j, const std::string & name);
+    void PutVarName(VariableIndex j, const std::string & name);
+    void PutConName(ConstraintIndex j, const std::string & name);
     void PutObjectiveSense(bool maximize);
 
     absl::StatusOr<VariableIndex> AppendVars(const std::vector<double>& lb,
@@ -38,7 +38,7 @@ class Mosek {
     absl::Status PutVarType(VariableIndex j, bool is_integer);
 
     absl::Status PutC(const std::vector<double> & c);
-    absl::Status PutCFix(double cfix);
+    void PutCFix(double cfix);
 
     absl::Status PutAIJList(const std::vector<ConstraintIndex>& subi,
                             const std::vector<VariableIndex>& subj,
@@ -49,6 +49,7 @@ class Mosek {
         VariableIndex indvar, const std::vector<VariableIndex>& subj,
         const std::vector<double>& cof, double lb, double ub);
     absl::Status PutDJCName(DisjunctiveConstraintIndex djci, const std::string & name);
+    absl::Status PutACCName(ConeConstraintIndex acci, const std::string & name);
     
     absl::StatusOr<ConeConstraintIndex> AppendConeConstraint(
         ConeType ct, const std::vector<int64_t>& ptr,
@@ -72,6 +73,7 @@ class Mosek {
     absl::Status UpdateObjective(double fixterm,
                                  const std::vector<VariableIndex>& subj,
                                  const std::vector<double>& cof);
+    absl::Status UpdateA(const std::vector<ConstraintIndex> & subi, const std::vector<VariableIndex> & subj, const std::vector<double> & cof);
 
     void PutParam(MSKiparame par, int value);
     void PutParam(MSKdparame par, double value);

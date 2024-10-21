@@ -57,19 +57,20 @@ class MosekSolver : public SolverInterface {
 
  private:
   Mosek msk;
-  absl::flat_hash_map<int64_t, int> variable_map;
-  absl::flat_hash_map<int64_t, int> linconstr_map;
-  absl::flat_hash_map<int64_t, int64_t> coneconstr_map;
-  absl::flat_hash_map<int64_t, int64_t> indconstr_map;
+  absl::flat_hash_map<int64_t, Mosek::VariableIndex> variable_map;
+  absl::flat_hash_map<int64_t, Mosek::ConstraintIndex> linconstr_map;
+  absl::flat_hash_map<int64_t, Mosek::ConeConstraintIndex> coneconstr_map;
+  absl::flat_hash_map<int64_t, Mosek::DisjunctiveConstraintIndex> indconstr_map;
 
   absl::Status ReplaceObjective(const ObjectiveProto & obj);
   absl::Status AddVariables(const VariablesProto & vars);
-  absl::Status AddConstraints(const ConstraintsProto & vars);
+  absl::Status AddConstraints(const LinearConstraintsProto & cons);
+  absl::Status AddConstraints(const LinearConstraintsProto & cons, const SparseDoubleMatrixProto & lincofupds);
   absl::Status AddIndicatorConstraints(const ::google::protobuf::Map<int64_t, IndicatorConstraintProto> & cons);
   absl::Status AddConicConstraints(const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto> & cons);
 
   absl::Status UpdateVariables(const VariableUpdatesProto & varupds);
-  absl::Status UpdateConstraints(const ConstraintsUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds);
+  absl::Status UpdateConstraints(const LinearConstraintUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds);
   absl::Status UpdateObjective(const ObjectiveUpdatesProto & objupds);
   absl::Status UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds);
   absl::Status UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds);

@@ -61,9 +61,11 @@ namespace {
 //constexpr absl::string_view kOutputFlag = "output_flag";
 //constexpr absl::string_view kLogToConsole = "log_to_console";
 
-//constexpr SupportedProblemStructures kHighsSupportedStructures = {
-//    .integer_variables = SupportType::kSupported,
-//    .quadratic_objectives = SupportType::kNotImplemented};
+constexpr SupportedProblemStructures kMosekSupportedStructures = {
+    .integer_variables     = SupportType::kSupported,
+    .second_order_cone_constraints = SupportType::kSupported,
+    .indicator_constraints = SupportType::kSupported,
+};
 
 #if 0
 absl::Status ToStatus(const HighsStatus status) {
@@ -418,40 +420,44 @@ absl::StatusOr<SolutionStatusProto> ToSolutionStatus(
          << "unimplemented highs SolutionStatus: " << highs_solution_status;
 }
 
-}  // namespace
 
 
 
 #endif
 
+}  // namespace
 
 
 
 
 absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
-  const int num_vars = model.variables().ids_size;
-  int firstvar; MSK_getnumvar(task,&firstvar);
+  int num_vars = vars.ids_size();
+  int firstvar = msk.NumVar();
 
-  { int i = 0; for (const auto & v : vars.ids()) variable[v] = firstvar+i; ++i; }
+  { int i = 0; for (const auto & v : vars.ids()) variable_map[v] = firstvar+i; ++i; }
 
   std::vector<double> lbx(num_vars);
   std::vector<double> ubx(num_vars);
   { int i = 0; for (const auto & v : vars.lower_bounds()) lbx[i++] = v; }
   { int i = 0; for (const auto & v : vars.upper_bounds()) ubx[i++] = v; }
-  
-  RETURN_IF_ERROR(msk.AppendVars(lbx,ubx));
+ 
+  { 
+    auto r = msk.AppendVars(lbx,ubx);
+    if (!r.ok())
+      return r.status();
+  }
 
   {
     int i = 0; 
     for (const bool is_integer : vars.integers()) {
       if (is_integer) {
-        RETURN_IF_ERROR(msk.PutVarType(ids[i],true));
+        RETURN_IF_ERROR(msk.PutVarType(variable_map[i],true));
       }
       ++i;
     }
   }
   { 
-    int i = 0; for (const auto & name : model.linear_variables().names()) {
+    int i = 0; for (const auto & name : vars.names()) {
       msk.PutVarName(firstvar+i,name.c_str());
       ++i;
     }
@@ -460,20 +466,21 @@ absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
 
 absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
   msk.PutObjName(obj.name());
-  msk.PutObjectiveSense(model.maximize());
   auto objcof = obj.linear_coefficients();
   msk.PutCFix(obj.offset());
+  auto num_vars = msk.NumVar();
   std::vector<double> c(num_vars);
-  auto n = objcof.ids_size;
+  auto n = objcof.ids_size();
   for (int64_t i = 0; i < n; ++i) {
     c[objcof.ids(i)] = objcof.values(i);
   }
-  msk.PutC(c);
+  RETURN_IF_ERROR(msk.PutC(c));
 } // MosekSolver::ReplaceObjective
 
-absl::Status MosekSolver::AddConstraints(const ConstraintsProto & cons) {
-  int firstcon = ms. MSK_getnumcon(task,&firstcon);
-  auto numcon = cons.size_ids;
+absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
+                                         const SparseDoubleMatrixProto& adata) {
+  int firstcon = msk.NumCon();
+  auto numcon = cons.ids_size();
   {
     int i = 0;
     for (const auto& id : cons.ids()) {
@@ -485,7 +492,10 @@ absl::Status MosekSolver::AddConstraints(const ConstraintsProto & cons) {
   std::vector<double> cub(numcon);
   { int i = 0; for (const auto & b : cons.lower_bounds()) clb[i++] = b; }
   { int i = 0; for (const auto & b : cons.upper_bounds()) cub[i++] = b; }
-  msg.AppendCons(clb,cub);
+  {
+    auto r = msk.AppendCons(clb,cub);
+    if (!r.ok()) return r.status();
+  }
 
   { 
     int i = 0; for (const auto & name : cons.names()) {
@@ -494,8 +504,7 @@ absl::Status MosekSolver::AddConstraints(const ConstraintsProto & cons) {
     }
   }
 
-  auto adata = model.linear_constraint_matrix();
-  size_t nnz = adata.size_row_ids;
+  size_t nnz = adata.row_ids_size();
   std::vector<Mosek::VariableIndex> subj; subj.reserve(nnz);
   std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
   std::vector<double> valij; valij.reserve(nnz);
@@ -504,9 +513,37 @@ absl::Status MosekSolver::AddConstraints(const ConstraintsProto & cons) {
     subj.push_back(variable_map[id]);
   for (const auto id : adata.column_ids())
     subi.push_back(linconstr_map[id]);
-  for (const auto c : adata.coefficients())
+  for (const auto c : adata.coefficients()) 
     valij.push_back(c);
-  RETURN_IF_ERROR(msk.PutAIJList(asubi,asubj,valij));
+  RETURN_IF_ERROR(msk.PutAIJList(subi,subj,valij));
+
+  return absl::OkStatus();
+}
+absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto & cons) {
+  int firstcon = msk.NumCon();
+  auto numcon = cons.ids_size();
+  {
+    int i = 0;
+    for (const auto& id : cons.ids()) {
+      linconstr_map[id] = i;
+      ++i;
+    }
+  }
+  std::vector<double> clb(numcon);
+  std::vector<double> cub(numcon);
+  { int i = 0; for (const auto & b : cons.lower_bounds()) clb[i++] = b; }
+  { int i = 0; for (const auto & b : cons.upper_bounds()) cub[i++] = b; }
+  {
+    auto r = msk.AppendCons(clb,cub);
+    if (!r.ok()) return r.status();
+  }
+
+  { 
+    int i = 0; for (const auto & name : cons.names()) {
+      msk.PutConName(firstcon+i,name.c_str());
+      ++i;
+    }
+  }
 
   return absl::OkStatus();
 } // MosekSolver::AddConstraints
@@ -520,22 +557,22 @@ absl::Status MosekSolver::AddIndicatorConstraints(
     indconstr_map[id] = i++;
     Mosek::VariableIndex indvar = indconstr_map[con.indicator_id()];
 
-    subj.clear(); subj.reserve(con.expressions().size_ids);
-    cof.clear(); cof.reserve(con.expressions().size_ids);
+    subj.clear(); subj.reserve(con.expression().ids_size());
+    cof.clear(); cof.reserve(con.expression().ids_size());
 
     for (auto id : con.expression().ids()) { subj.push_back(variable_map[id]); }
-    for (auto c : con.expression().values() { cof.push_back(c); }
+    for (auto c : con.expression().values()) { cof.push_back(c); }
 
     auto djci = msk.AppendIndicatorConstraint(con.activate_on_zero(),indvar,subj,cof,con.lower_bound(),con.upper_bound());
     if (!djci.ok()) { return djci.status(); }
 
-    msk.PutDJCName(*djci,con.name());
+    RETURN_IF_ERROR(msk.PutDJCName(*djci,con.name()));
   }
   return absl::OkStatus();
 } // MosekSolver::AddIndicatorConstraints
 
 absl::Status MosekSolver::AddConicConstraints(
-  const ::google::protobuf::Map<int64_t, SecondOrderCodeConstraintProto>&
+  const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto>&
       cons) {
 
   std::vector<Mosek::VariableIndex> subj;
@@ -547,9 +584,9 @@ absl::Status MosekSolver::AddConicConstraints(
   ptr.push_back(0);
   for (const auto & [idx, con] : cons) {
     auto & expr0 = con.upper_bound();
-    int64_t totalnnz = expr0.size_ids();
+    int64_t totalnnz = expr0.ids_size();
     for (const auto & lexp : con.arguments_to_norm()) {
-      totalnnz += lexp.size_ids();
+      totalnnz += lexp.ids_size();
     }
 
     subj.reserve(totalnnz);
@@ -573,7 +610,7 @@ absl::Status MosekSolver::AddConicConstraints(
       return acci.status();
     }
 
-    RETURN_IF_ERROR(msk.PutAccName(*acci, con.name()));
+    RETURN_IF_ERROR(msk.PutACCName(*acci, con.name()));
   }
   return absl::OkStatus();
 }
@@ -947,49 +984,48 @@ absl::Status MosekSolver::AddConicConstraints(
 // We will not actually delete variables or constraints from the Task since that
 // will change indexes of all successive items. Instead we will remove non-zeros
 // and bounds from the deleted items. 
-absl::StatusOr<bool> MosekModel::Update(const ModelUpdateProto& model_update) {
-  for (auto id : model_update.deleted_variable_ids()) msk.ClearVariable(variable_map[id]);
-  for (auto id : model_update.deleted_linear_constraint_ids()) msk.ClearConstraint(linconstr_map[id]);
+absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto& model_update) {
+  for (auto id : model_update.deleted_variable_ids()) RETURN_IF_ERROR(msk.ClearVariable(variable_map[id]));
+  for (auto id : model_update.deleted_linear_constraint_ids()) RETURN_IF_ERROR(msk.ClearConstraint(linconstr_map[id]));
+  for (auto id : model_update.second_order_cone_constraint_updates().deleted_constraint_ids()) RETURN_IF_ERROR(msk.ClearConeConstraint(coneconstr_map[id]));
+  for (auto id : model_update.indicator_constraint_updates().deleted_constraint_ids()) RETURN_IF_ERROR(msk.ClearDisjunctiveConstraint(indconstr_map[id]));
 
-  if (!AddVariables(model_update.new_variables()).ok()) return false;
-  if (!Variables(model_update.new_variables())) return false;
-  if (!UpdateVariables(model_update.variable_updates())) return false;
-  if (!AddConstraints(model_update.new_linear_constraints())) return false;
-  if (!UpdateConstraints(model_update.linear_constraint_updates(),
-        model_update.linear_constraint_matrix_updates())) return false;
-  if (!UpdateObjective(mosek_update.objective_updates())) return false;
-  for (const auto & conupd : model_update.second_order_cone_constraint_updates()) {
-    if (!UpdateConeConstraint(conupd)) return false;
-  }
-  for (const auto & conupd : model_update.indicator_constraint_updates()) {
-    if (!UpdateIndicatorConstraint(conupd)) return false;
-  }
+  RETURN_IF_ERROR(AddVariables(model_update.new_variables()));
+  RETURN_IF_ERROR(UpdateVariables(model_update.variable_updates()));
+  RETURN_IF_ERROR(AddConstraints(model_update.new_linear_constraints()));
+  RETURN_IF_ERROR(UpdateConstraints(model_update.linear_constraint_updates(),
+        model_update.linear_constraint_matrix_updates()));
+
+  RETURN_IF_ERROR(UpdateObjective(model_update.objective_updates()));
+  RETURN_IF_ERROR(AddConicConstraints(model_update.second_order_cone_constraint_updates().new_constraints()));
+  RETURN_IF_ERROR(AddIndicatorConstraints(model_update.indicator_constraint_updates().new_constraints()));
+  //  RETURN_IF_ERROR(UpdateIndicatorConstraint(conupd));
   return true;
 }
 
-absl::Status MosekModel::UpdateVariables(const VariableUpdatesProto & varupds) {
-  for (int64_t i = 0, n = varupds.lower_bounds().size_ids; i < n; ++i) {
-    RETURN_IF_ERROR(msk.UpdateVarLowerBound(variable_map[varupds.lower_bounds().ids(i)], varupds.lower_bounds().values(i)));
+absl::Status MosekSolver::UpdateVariables(const VariableUpdatesProto & varupds) {
+  for (int64_t i = 0, n = varupds.lower_bounds().ids_size(); i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateVariableLowerBound(variable_map[varupds.lower_bounds().ids(i)], varupds.lower_bounds().values(i)));
   }
-  for (int64_t i = 0, n = varupds.upper_bounds().size_ids; i < n; ++i) {
-    RETURN_OF_ERROR(msk.UpdateVarUpperBound(variable_map[varupds.upper_bounds().ids(i)], varupds.upper_bounds().values(i)));
+  for (int64_t i = 0, n = varupds.upper_bounds().ids_size(); i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateVariableUpperBound(variable_map[varupds.upper_bounds().ids(i)], varupds.upper_bounds().values(i)));
   }
-  for (int64_t i = 0, n = varupds.integers().size_ids; i < n; ++i) {
-    RETURN_IF_ERROR(msk.UpdateVariableType(variable_map[varupds.upper_bounds().ids(i)], varupds.integer().values(i)));
+  for (int64_t i = 0, n = varupds.integers().ids_size(); i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateVariableType(variable_map[varupds.upper_bounds().ids(i)], varupds.integers().values(i)));
   }
   return absl::OkStatus();
 }
-absl::Status MosekModel::UpdateConstraints(const ConstraintsUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds) {
-  for (int64_t i = 0, n = conupds.lower_bounds().size_ids; i < n; ++i) {
-    RETURN_IF_ERROR(msk.UpdateConstraintLowerBound(coniable_map[conupds.lower_bounds().ids(i)], conupds.lower_bounds().values(i)));
+absl::Status MosekSolver::UpdateConstraints(const LinearConstraintUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds) {
+  for (int64_t i = 0, n = conupds.lower_bounds().ids_size(); i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateConstraintLowerBound(linconstr_map[conupds.lower_bounds().ids(i)], conupds.lower_bounds().values(i)));
   }
-  for (int64_t i = 0, n = conupds.upper_bounds().size_ids; i < n; ++i) {
-    RETURN_IF_ERROR(msk.UpdateConstraintUpperBound(coniable_map[conupds.upper_bounds().ids(i)], conupds.upper_bounds().values(i)));
+  for (int64_t i = 0, n = conupds.upper_bounds().ids_size(); i < n; ++i) {
+    RETURN_IF_ERROR(msk.UpdateConstraintUpperBound(linconstr_map[conupds.upper_bounds().ids(i)], conupds.upper_bounds().values(i)));
   }
 
-  size_t n = lincofupds.size_ids;
-  std::vector<Mosek::ConstaintIndex> subi(n);
-  std::vector<Mosek::VariableIndex> subj(n); 
+  size_t n = lincofupds.row_ids_size();
+  std::vector<int> subi(n);
+  std::vector<int> subj(n); 
   std::vector<double> valij(lincofupds.coefficients().begin(),lincofupds.coefficients().end());
   { int i = 0; for (auto id : lincofupds.row_ids()) { subi[i] = linconstr_map[id]; ++i; } }
   { int i = 0; for (auto id : lincofupds.column_ids()) { subj[i] = variable_map[id]; ++i; } }
@@ -997,17 +1033,18 @@ absl::Status MosekModel::UpdateConstraints(const ConstraintsUpdatesProto & conup
   RETURN_IF_ERROR(msk.UpdateA(subi,subj,valij));
   return absl::OkStatus();
 }
-absl::Status MosekModel::UpdateObjective(const ObjectiveUpdatesProto & objupds) {
-  std::vector<double> cof(objupds.linear_coefficients().begin(),objupds.linear_coefficients().end());
-  std::vecor<Mosek::VariableIndex> subj; subj.reserve(cof.size());
-  for (auto id : objupds.coefficients().ids()) subj.push_back(variable_map[id]);
+absl::Status MosekSolver::UpdateObjective(const ObjectiveUpdatesProto & objupds) {
+  const auto& vals = objupds.linear_coefficients();
+  std::vector<double> cof(vals.values().begin(),vals.values().end());
+  std::vector<Mosek::VariableIndex> subj; subj.reserve(cof.size());
+  for (auto id : objupds.linear_coefficients().ids()) subj.push_back(variable_map[id]);
 
   RETURN_IF_ERROR(msk.UpdateObjectiveSense(objupds.direction_update()));
   RETURN_IF_ERROR(msk.UpdateObjective(objupds.offset_update(),subj,cof));
 
   return absl::OkStatus();
 }
-absl::Status MosekModel::UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds) {
+absl::Status MosekSolver::UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds) {
   for (auto id : conupds.deleted_constraint_ids()) {
     RETURN_IF_ERROR(msk.ClearConeConstraint(coneconstr_map[id]));
   }
@@ -1016,12 +1053,13 @@ absl::Status MosekModel::UpdateConstraint(const SecondOrderConeConstraintUpdates
 
   return absl::OkStatus();
 }
-absl::Status MosekModel::UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds) {
+
+absl::Status MosekSolver::UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds) {
   for (auto id : conupds.deleted_constraint_ids()) {
     RETURN_IF_ERROR(msk.ClearDisjunctiveConstraint(indconstr_map[id]));
   }
   
-  RETURN_IF_ERROR(AddConicConstraints(conupds.new_constraints()));
+  RETURN_IF_ERROR(AddIndicatorConstraints(conupds.new_constraints()));
 
   return absl::OkStatus();
 }
@@ -1032,34 +1070,35 @@ absl::Status MosekModel::UpdateConstraint(const IndicatorConstraintUpdatesProto&
 
 
 
-absl::StatusOr<std::unique_ptr<SolverInterface>> Mosek::New(
+absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
     const ModelProto& model, const InitArgs&) {
   RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
   
-  if (!input_model.auxiliary_objectives().empty())
+  if (!model.auxiliary_objectives().empty())
     return util::InvalidArgumentErrorBuilder()
            << "Mosek does not support multi-objective models";
-  if (!input_model.objective().quadratic_coefficients().row_ids().empty()) {
+  if (!model.objective().quadratic_coefficients().row_ids().empty()) {
     return util::InvalidArgumentErrorBuilder()
            << "Mosek does not support models with quadratic objectives";
   }
-  if (!input_model.quadratic_constraints().empty()) {
+  if (!model.quadratic_constraints().empty()) {
     return util::InvalidArgumentErrorBuilder()
            << "Mosek does not support models with quadratic constraints";
   }
-  if (!input_model.sos1_constraints().empty() || 
-      !input_model.sos2_constraints().empty() ) {
+  if (!model.sos1_constraints().empty() || 
+      !model.sos2_constraints().empty() ) {
     return util::InvalidArgumentErrorBuilder()
            << "Mosek does not support models with SOS constraints";
   }
 
   std::unique_ptr<MosekSolver> mskslv(new MosekSolver());
   mskslv->msk.PutName(model.name());
+  //mskslv->msk.UpdateObjectiveSense(model.objective().maximize());
 
-  RETURN_IF_ERROR(msk->AddVariables(model.variables()));
-  RETURN_IF_ERROR(msk->ReplaceObjective(model.objective()));
-  RETURN_IF_ERROR(msk->AddConstraints(model.constraints()));
-  RETURN_IF_ERROR(msk->AddIndicatorConstraints(model.indicator_constraints()));
+  RETURN_IF_ERROR(mskslv->AddVariables(model.variables()));
+  RETURN_IF_ERROR(mskslv->ReplaceObjective(model.objective()));
+  RETURN_IF_ERROR(mskslv->AddConstraints(model.linear_constraints(),model.linear_constraint_matrix()));
+  RETURN_IF_ERROR(mskslv->AddIndicatorConstraints(model.indicator_constraints()));
 
   std::unique_ptr<SolverInterface> res(std::move(mskslv));
 
@@ -1103,18 +1142,16 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         const absl::Duration time_limit,
         util_time::DecodeGoogleApiProto(parameters.time_limit()),
         _ << "invalid time_limit value for HiGHS.");
-    msk.PutDoubleParam(MSK_DPAR_OPTIMIZER_MAX_TIME, absl::ToDoubleSeconds(time_limit));
+    msk.PutParam(MSK_DPAR_OPTIMIZER_MAX_TIME, absl::ToDoubleSeconds(time_limit));
   }
 
   int ipar_intpnt_max_iterations = msk.GetParam(MSK_IPAR_INTPNT_MAX_ITERATIONS);
   int ipar_sim_max_iterations = msk.GetParam(MSK_IPAR_SIM_MAX_ITERATIONS);
   if (parameters.has_iteration_limit()) {
-    ASSIGN_OR_RETURN(
-        const int iter_limit,
-        SafeIntCast(parameters.iteration_limit(), "iteration_limit"));
+    const int iter_limit = parameters.iteration_limit();
 
-    msk.PutIntParam(MSK_IPAR_INTPNT_MAX_ITERATIONS, iter_limit);
-    msk.PutIntParam(MSK_IPAR_SIM_MAX_ITERATIONS, iter_limit);
+    msk.PutParam(MSK_IPAR_INTPNT_MAX_ITERATIONS, iter_limit);
+    msk.PutParam(MSK_IPAR_SIM_MAX_ITERATIONS, iter_limit);
   }
   
   // Not supported in MOSEK 10.2
@@ -1133,44 +1170,44 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   double dpar_lower_obj_cut = msk.GetParam(MSK_DPAR_LOWER_OBJ_CUT);
   if (parameters.has_objective_limit()) {
     if (msk.IsMaximize()) 
-      msk.PutDoubleParam(MSK_DPAR_UPPER_OBJ_CUT, parameters.cutoff_limit());
+      msk.PutParam(MSK_DPAR_UPPER_OBJ_CUT, parameters.cutoff_limit());
     else
-      msk.PutDoubleParam(MSK_DPAR_LOWER_OBJ_CUT, parameters.cutoff_limit());
+      msk.PutParam(MSK_DPAR_LOWER_OBJ_CUT, parameters.cutoff_limit());
   }
 
   int ipar_num_threads = msk.GetParam(MSK_IPAR_NUM_THREADS);
   if (parameters.has_threads()) {
-    msk.PutIntParam(MSK_IPAR_NUM_THREADS, parameters.threads());
+    msk.PutParam(MSK_IPAR_NUM_THREADS, parameters.threads());
   }
 
   double dpar_mio_tol_abs_gap = msk.GetParam(MSK_DPAR_MIO_TOL_ABS_GAP);
   if (parameters.has_absolute_gap_tolerance()) {
-    msk.PutDoubleParameter(MSK_DPAR_MIO_TOL_ABS_GAP, parameters.absolute_gap_tolerance());
+    msk.PutParam(MSK_DPAR_MIO_TOL_ABS_GAP, parameters.absolute_gap_tolerance());
   }
   
   double dpar_mio_tol_rel_gap = msk.GetParam(MSK_DPAR_MIO_TOL_REL_GAP);
-  double dpar_intpnt_tol_rel_gap = msk.GetDoubleParam(MSK_DPAR_INTPNT_TOL_REL_GAP);
-  double dpar_intpnt_co_tol_rel_gap = msk.GetDoubleParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP);
+  double dpar_intpnt_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_TOL_REL_GAP);
+  double dpar_intpnt_co_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP);
   if (parameters.has_relative_gap_tolerance()) {
-    msk.PutDoubleParameter(MSK_DPAR_INTPNT_TOL_REL_GAP, parameters.absolute_gap_tolerance());
-    msk.PutDoubleParameter(MSK_DPAR_INTPNT_CO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
-    msk.PutDoubleParameter(MSK_DPAR_MIO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
+    msk.PutParam(MSK_DPAR_INTPNT_TOL_REL_GAP, parameters.absolute_gap_tolerance());
+    msk.PutParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
+    msk.PutParam(MSK_DPAR_MIO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
   }
 
   int ipar_optimizer = msk.GetParam(MSK_IPAR_OPTIMIZER);
   switch (parameters.lp_algorithm()) {
     case LP_ALGORITHM_BARRIER:
-      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_INTPNT);
+      msk.PutParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_INTPNT);
       break;
     case LP_ALGORITHM_DUAL_SIMPLEX:
-      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_DUAL_SIMPLEX);
+      msk.PutParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_DUAL_SIMPLEX);
       break;
     case LP_ALGORITHM_PRIMAL_SIMPLEX:
-      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_PRIMAL_SIMPLEX);
+      msk.PutParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_PRIMAL_SIMPLEX);
       break;
     default:
       // use default auto select, usually intpnt
-      msk.PutIntParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_FREE);
+      msk.PutParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_FREE);
       break;
   }
 
