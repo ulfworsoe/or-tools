@@ -52,7 +52,7 @@ class Mosek {
     absl::Status PutACCName(ConeConstraintIndex acci, const std::string & name);
     
     absl::StatusOr<ConeConstraintIndex> AppendConeConstraint(
-        ConeType ct, const std::vector<int64_t>& ptr,
+        ConeType ct, const std::vector<int64_t>& sizes,
         const std::vector<VariableIndex>& subj, const std::vector<double>& cof,
         const std::vector<double>& b);
 

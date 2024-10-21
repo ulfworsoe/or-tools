@@ -15,6 +15,7 @@ namespace operations_research::math_opt {
     if (r != MSK_RES_OK) {
       return nullptr;
     }
+    MSKappendrzerodomain(0);
 
     return new Mosek(task);
   }
@@ -121,6 +122,12 @@ namespace operations_research::math_opt {
     return absl::OkStatus();
   }
 
+  // Note: We implement indicator constraints as a disjunctive constraint of the form:
+  // [ indvar = (negate ? 1.0 : 0.0) ]
+  //   OR 
+  // [ indvar = (negate ? 0.0 : 1.0)
+  //   lb <= Ax <= ub ]
+  //
   absl::StatusOr<DisjunctiveConstraintIndex> Mosek::AppendIndicatorConstraint(
       bool negate,
       VariableIndex indvar, const std::vector<VariableIndex>& subj,
@@ -142,27 +149,106 @@ namespace operations_research::math_opt {
 
     MSK_putafefrowentry(task.get(),nafe, indvar,1.0);
     MSK_putafefrow(task.get(),nafe+1,(int)n,subj.data(),cof.data());
-    int64_t afeidx[4] = { nafe, nafe, nafe+1, nafe+1 };
-    double b[4] = { 0.0, 1.0, lb, ub };
-      MSK_putdjc();
+    int64_t dom_eq, dom_lb, dom_ub;
+    MSK_appendrzerodomain(task.get(),1,&dom_eq);
+    if (std::isfinite(lb) {
+      MSK_appendrplusdomain(task.get(),1,&dom_lb);
     }
-   
+    else {
+      MSK_appendrdomain(task.get(),1,&dom_lb);
+    }
+    if (std::isfinite(ub) {
+      MSK_appendrminusdomain(task.get(),1,&dom_ub);
+    }
+    else {
+      MSK_appendrdomain(task.get(),1,&dom_ub);
+    }
 
+    int64_t afeidx[4] = { nafe, nafe, nafe+1, nafe+1 };
+    double b[4] = { negate ? 1.0 : 0.0, negate ? 0.0 : 1.0, lb, ub };
+    int64_t domidxs[4] = { dom_eq, dom_eq, dom_lb,dom_ub };
+    int64_t termsizes[2] = { 1,3 };
+    MSK_putdjc(task.get(),ndjc,4,domidxs,4,afeidx,b,2,termsizes);
+   
     return ndjc;
   }
-  absl::Status Mosek::PutDJCName(DisjunctiveConstraintIndex djci, const std::string & name);
-  absl::Status Mosek::PutACCName(ConeConstraintIndex acci, const std::string & name);
+  absl::Status Mosek::PutDJCName(DisjunctiveConstraintIndex djci, const std::string & name) {
+    if (MSK_RES_OK != MSK_putdjcname(task.get(),djci,name.c_str()))
+      return absl::InvalidArgumentError("Invalid argument djci");
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::PutACCName(ConeConstraintIndex acci, const std::string & name) {
+    if (MSK_RES_OK != MSK_putaccname(task.get(),dcci,name.c_str()))
+      return absl::InvalidArgumentError("Invalid argument acci");
+    return absl::OkStatus();
+  }
   
   absl::StatusOr<ConeConstraintIndex> Mosek::AppendConeConstraint(
-      ConeType ct, const std::vector<int64_t>& ptr,
+      ConeType ct, const std::vector<int64_t>& sizes,
       const std::vector<VariableIndex>& subj, const std::vector<double>& cof,
-      const std::vector<double>& b);
+      const std::vector<double>& b) {
+    size_t n = sizes.size();
+    size_t nnz = 0; for (auto & nz : sizes) nnz += nz;
+    int64_t domidx;
+
+    if (nnz != cof.size() ||
+        nnz != subj.size())
+      return absl::InvalidArgumentError("Mismatching argument lengths of subj and cof");
+    if (n != b.size())
+      return absl::InvalidArgumentError("Mismatching argument lengths b and ptr");
+
+    switch (ct) {
+      case MSK_CT_QUAD: MSK_appendquadraticconedomain(task.get(),n); break;
+      default: return absl::InvalidArgumentError("Cone type not supported");
+    }
+
+    int64_t afei;
+    MSK_getnumafe(task.get(),&afei);
+    MSK_appendafes(task.get(),n);
+   
+    std::vector<int64_t> afeidxs(n); for (ssize_t i = 0; i < n; ++i) afeidxs[i] = afei+i;
+    std::vector<int64_t> ptr(n); ptr[0] = 0; for (ssize_t i = 0; i < n; ++i) ptr[i+1] = ptr[i] + sizes[i];
+
+    std::vector<double> accb(n);
+
+    int64_t acci;
+    MSK_getnumacc(task.get(),&acci);
+    MSK_appendaccseq(task.get(),domidx,n,afei, accb.data());
+    MSK_putafefrowlist(task.get(),n,afeidxs.data(),sizes.data(),ptr.data(),nnz,subj.data(),cof.data());
+    for (ssize_t i = 0; i < n; ++i) 
+      MSK_putafeglist(task.get(),afei+i,b[i]);
+    return acci;
+  }
+
 
   // Delete-ish
-  absl::Status Mosek::ClearVariable(VariableIndex j);
-  absl::Status Mosek::ClearConstraint(ConstraintIndex i);
-  absl::Status Mosek::ClearConeConstraint(ConeConstraintIndex i);
-  absl::Status Mosek::ClearDisjunctiveConstraint(DisjunctiveConstraintIndex i);
+  absl::Status Mosek::ClearVariable(VariableIndex j) {
+    if (MSK_RES_OK != MSK_putvarbound(task.get(),j,MSK_BK_FR,0.0,0.0))
+      return absl::InvalidArgumentError("Invalid variable index j");
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::ClearConstraint(ConstraintIndex i) {
+    if (MSK_RES_OK != MSK_putconbound(task.get(),i,MSK_BK_FR,0.0,0.0))
+      return absl::InvalidArgumentError("Invalid constraint index i");
+    int subj;
+    double cof;
+    MSK_putarow(task.get(),i,0,&subj,&cof);
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::ClearConeConstraint(ConeConstraintIndex i) {
+    int64_t afeidxs;
+    double b;
+    if (MSK_RES_OK != MSKputacc(task.get(),i,0,&afeidxs,&b))
+      return absl::InvalidArgumentError("Invalid constraint index i");
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::ClearDisjunctiveConstraint(DisjunctiveConstraintIndex i) {
+    int64_t i64s;
+    double f64s;
+    if (MSK_RES_OK != MSKputdjc(task.get(),i,0,&i64s,0,&i64s,&f64s,0,i64s))
+      return absl::InvalidArgumentError("Invalid constraint index i");
+    return absl::OkStatus();
+  }
 
   // Update
   

@@ -577,11 +577,10 @@ absl::Status MosekSolver::AddConicConstraints(
 
   std::vector<Mosek::VariableIndex> subj;
   std::vector<double>  cof;
-  std::vector<int64_t> ptr;
+  std::vector<int64_t> sizes;
   std::vector<double>  b;
 
-  ptr.reserve(1+cons.size());
-  ptr.push_back(0);
+  sizes.reserve(cons.size());
   for (const auto & [idx, con] : cons) {
     auto & expr0 = con.upper_bound();
     int64_t totalnnz = expr0.ids_size();
@@ -597,15 +596,13 @@ absl::Status MosekSolver::AddConicConstraints(
     for (auto c : expr0.coefficients()) { cof.push_back(c); }
 
     for (const auto & expri : con.arguments_to_norm()) {
-      ptr.push_back(subj.size());
+      sizes.push_back(expri.ids_size());
       for (const auto & id : expri.ids()) { subj.push_back(variable_map[id]); }
       for (auto c : expri.coefficients()) { cof.push_back(c); }
       b.push_back(expri.offset());
     }
 
-    ptr.push_back(subj.size());
-
-    auto acci = msk.AppendConeConstraint(Mosek::ConeType::SecondOrderCone,ptr,subj,cof,b);
+    auto acci = msk.AppendConeConstraint(Mosek::ConeType::SecondOrderCone,sizes,subj,cof,b);
     if (!acci.ok()) {
       return acci.status();
     }
