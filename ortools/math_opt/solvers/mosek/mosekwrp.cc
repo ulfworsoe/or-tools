@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include <locale>
+#include <type_traits>
 #include "absl/status/status.h"
 #include "mosekwrp.cc"
 
@@ -251,17 +252,85 @@ namespace operations_research::math_opt {
   }
 
   // Update
-  
-  absl::Status Mosek::UpdateVariableLowerBound(VariableIndex j, double b);
-  absl::Status Mosek::UpdateVariableUpperBound(VariableIndex j, double b);
-  absl::Status Mosek::UpdateVariableType(VariableIndex j, bool is_integer);
-  absl::Status Mosek::UpdateConstraintLowerBound(ConstraintIndex i, double b);
-  absl::Status Mosek::UpdateConstraintUpperBound(ConstraintIndex i, double b);
-  absl::Status Mosek::UpdateObjectiveSense(bool maximize);
+ 
+  static MSKboundkeye merge_lower_bound(MSKboundkeye bk, double bl, double bu, double b) {
+    switch (bk) {
+      case MSK_BK_FR: return std::isfinite(b) ? MSK_BK_LO : MSK_BK_FR; 
+      case MSK_BK_LO: return std::isfinite(b) ? MSK_BK_LO : MSK_BK_FR; 
+      case MSK_BK_UP: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+      case MSK_BK_FX: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+      case MSK_BK_RA: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+    }
+  }
+  static MSKboundkeye merge_upper_bound(MSKboundkeye bk, double bl, double bu, double b) {
+    switch (bk) {
+      case MSK_BK_FR: return std::isfinite(b) ? MSK_BK_UP : MSK_BK_FR;
+      case MSK_BK_UP: return std::isfinite(b) ? MSK_BK_UP : MSK_BK_FR; 
+      case MSK_BK_LO: return std::isfinite(b) ? (b < bl || b > bl ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+      case MSK_BK_FX: return std::isfinite(b) ? (b < bl || b > bl ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+      case MSK_BK_RA: return std::isfinite(b) ? (b < bl || b > bl ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+    }
+  }
+
+  absl::Status Mosek::UpdateVariableLowerBound(VariableIndex j, double b) {
+    MSKboundkeye bk;
+    double bl,bu;
+    if (MSK_RES_OK != MSK_getvarbound(task.get(),j,&bk,&bl,&bu))
+      return absl::InvalidArgumentError("Invalid variable index j");
+    MSK_putvarbound(task.get(),j,merge_lower_bound(bk,bl,bu,b),b,bu);
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::UpdateVariableUpperBound(VariableIndex j, double b) {
+    MSKboundkeye bk;
+    double bl,bu;
+    if (MSK_RES_OK != MSK_getvarbound(task.get(),j,&bk,&bl,&bu))
+      return absl::InvalidArgumentError("Invalid variable index j");
+    MSK_putvarbound(task.get(),j,merge_upper_bound(bk,bl,bu,b),b,bu);
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::UpdateVariableType(VariableIndex j, bool is_integer) {
+    if (MSK_RES_OK != MSK_putvartype(task.get(),j,is_integer ? MSK_VAR_TYPE_INT : MSK_VAR_TYPE_CONT))
+      return absl::InvalidArgumentError("Invalid variable index j");
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::UpdateConstraintLowerBound(ConstraintIndex i, double b) {
+    MSKboundkeye bk;
+    double bl,bu;
+    if (MSK_RES_OK != MSK_getconbound(task.get(),i,&bk,&bl,&bu))
+      return absl::InvalidArgumentError("Invalid constraint index i");
+    MSK_putconbound(task.get(),i,merge_lower_bound(bk,bl,bu,b),b,bu);
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::UpdateConstraintUpperBound(ConstraintIndex i, double b) {
+    MSKboundkeye bk;
+    double bl,bu;
+    if (MSK_RES_OK != MSK_getconbound(task.get(),i,&bk,&bl,&bu))
+      return absl::InvalidArgumentError("Invalid constraint index i");
+    MSK_putconbound(task.get(),i,merge_upper_bound(bk,bl,bu,b),b,bu);
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::UpdateObjectiveSense(bool maximize) {
+    MSK_putobjsense(task.get(),maximize ? MSK_OBJECTIVE_SENSE_MAXIMIZE : MSK_OBJECTIVE_SENSE_MINIMIZE);
+    return absl::OkStatus();
+  }
   absl::Status Mosek::UpdateObjective(double fixterm,
                                const std::vector<VariableIndex>& subj,
-                               const std::vector<double>& cof);
-  absl::Status Mosek::UpdateA(const std::vector<ConstraintIndex> & subi, const std::vector<VariableIndex> & subj, const std::vector<double> & cof);
+                               const std::vector<double>& cof) {
+    if (subj.size() != cof.size())
+      return absl::InvalidArgumentError("Mismatching argument lengths of subj and cof");
+    if (subj.size() > std::numeric_limits<int>::max())
+      return absl::InvalidArgumentError("Argument subj and cof are too long");
+    if (MSK_RES_OK != MSK_putclist(task.get(),(int)subj.size(),subj.data(),cof.data()))
+      return absl::InvalidArgumentError("Invalid variable index in subj");
+    MSK_putcfix(task.get(),fixterm);
+    return absl::OkStatus();
+  }
+  absl::Status Mosek::UpdateA(const std::vector<ConstraintIndex>& subi,
+                              const std::vector<VariableIndex>& subj,
+                              const std::vector<double>& cof) 
+  {
+
+  }
 
   void Mosek::PutParam(MSKiparame par, int value);
   void Mosek::PutParam(MSKdparame par, double value);
