@@ -23,6 +23,7 @@ class Mosek {
     typedef int64_t ConeConstraintIndex        ;
 
     Mosek(Mosek && m);
+    Mosek(Mosek & m) = delete;
 
     static Mosek * Create();
 

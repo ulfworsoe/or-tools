@@ -46,6 +46,7 @@
 #include "ortools/math_opt/core/solver_interface.h"
 #include "ortools/math_opt/core/sorted.h"
 #include "ortools/math_opt/core/sparse_vector_view.h"
+#include "ortools/math_opt/infeasible_subsystem.pb.h"
 #include "ortools/math_opt/parameters.pb.h"
 #include "ortools/math_opt/result.pb.h"
 #include "ortools/math_opt/solution.pb.h"
@@ -1100,8 +1101,9 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
     return util::InvalidArgumentErrorBuilder()
            << "Mosek does not support models with SOS constraints";
   }
-
-  std::unique_ptr<MosekSolver> mskslv(new MosekSolver());
+  
+  std::unique_ptr<Mosek> msk(Mosek::Create());
+  std::unique_ptr<MosekSolver> mskslv(new MosekSolver(std::move(*msk)));
   mskslv->msk.PutName(model.name());
   //mskslv->msk.UpdateObjectiveSense(model.objective().maximize());
 
@@ -1114,6 +1116,9 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
 
   return res;
 }
+
+MosekSolver::MosekSolver(Mosek && msk) : msk(std::move(msk)) {}
+  
 
 
 
@@ -1595,7 +1600,6 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   RETURN_IF_ERROR(set_solve_time(result));
   return result;
 #endif
-}
 
 absl::StatusOr<ComputeInfeasibleSubsystemResultProto>
 MosekSolver::ComputeInfeasibleSubsystem(const SolveParametersProto&,
@@ -1607,5 +1611,5 @@ MosekSolver::ComputeInfeasibleSubsystem(const SolveParametersProto&,
 
 MATH_OPT_REGISTER_SOLVER(SOLVER_TYPE_MOSEK, MosekSolver::New);
 
-}  // namespace operations_research::math_opt
+} // namespace operations_research::math_opt
 

@@ -261,9 +261,11 @@ namespace operations_research::math_opt {
       case MSK_BK_LO: return std::isfinite(b) ? MSK_BK_LO : MSK_BK_FR; 
       case MSK_BK_UP: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
       case MSK_BK_FX: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
-      case MSK_BK_RA: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
+      case MSK_BK_RA: return std::isfinite(b) ? (b < bu || b > bu ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP;                       
     }
+    return MSK_BK_FX;
   }
+
   static MSKboundkeye merge_upper_bound(MSKboundkeye bk, double bl, double bu, double b) {
     switch (bk) {
       case MSK_BK_FR: return std::isfinite(b) ? MSK_BK_UP : MSK_BK_FR;
@@ -272,6 +274,7 @@ namespace operations_research::math_opt {
       case MSK_BK_FX: return std::isfinite(b) ? (b < bl || b > bl ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
       case MSK_BK_RA: return std::isfinite(b) ? (b < bl || b > bl ? MSK_BK_RA : MSK_BK_FX) : MSK_BK_UP; 
     }
+    return MSK_BK_FX;
   }
 
   absl::Status Mosek::UpdateVariableLowerBound(VariableIndex j, double b) {

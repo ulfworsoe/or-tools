@@ -82,7 +82,8 @@ class MosekSolver : public SolverInterface {
   absl::StatusOr<PrimalRayProto>      PrimalRay(MSKsoltypee whichsol);
   absl::StatusOr<DualRayProto>        DualRay(MSKsoltypee whichsol);
 
-  MosekSolver();
+  MosekSolver(Mosek && msk);
+  MosekSolver(MosekSolver &) = delete;
 
 #if 0
   struct SolutionClaims {
