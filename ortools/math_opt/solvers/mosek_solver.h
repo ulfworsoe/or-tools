@@ -14,11 +14,11 @@
 #ifndef OR_TOOLS_MATH_OPT_SOLVERS_MOSEK_SOLVER_H_
 #define OR_TOOLS_MATH_OPT_SOLVERS_MOSEK_SOLVER_H_
 
-#include <cmath>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
+#include <cmath>
 
 #include "mosek/mosekwrp.h"
 #include "absl/container/flat_hash_map.h"
@@ -74,6 +74,13 @@ class MosekSolver : public SolverInterface {
   absl::Status UpdateObjective(const ObjectiveUpdatesProto & objupds);
   absl::Status UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds);
   absl::Status UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds);
+
+
+  absl::StatusOr<PrimalSolutionProto> PrimalSolution(MSKsoltypee whichsol);
+  absl::StatusOr<DualSolutionProto>   DualSolution(MSKsoltypee whichsol);
+  absl::StatusOr<SolutionProto>       Solution(MSKsoltypee whichsol);
+  absl::StatusOr<PrimalRayProto>      PrimalRay(MSKsoltypee whichsol);
+  absl::StatusOr<DualRayProto>        DualRay(MSKsoltypee whichsol);
 
   MosekSolver();
 

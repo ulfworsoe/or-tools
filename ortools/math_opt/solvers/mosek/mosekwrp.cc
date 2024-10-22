@@ -4,7 +4,7 @@
 #include <locale>
 #include <type_traits>
 #include "absl/status/status.h"
-#include "mosekwrp.cc"
+#include "mosekwrp.h"
 
 
 namespace operations_research::math_opt {
@@ -16,12 +16,13 @@ namespace operations_research::math_opt {
     if (r != MSK_RES_OK) {
       return nullptr;
     }
-    MSKappendrzerodomain(0);
+    int64_t domidx;
+    MSK_appendrzerodomain(task,0,&domidx);
 
     return new Mosek(task);
   }
 
-  Mosek::Mosek(MSKtask_t task) : task(task) { }
+  Mosek::Mosek(MSKtask_t task) : task(task,delete_msk_task_func) { }
   Mosek::Mosek(Mosek && m) : task(std::move(m.task)) { }
 
   void Mosek::PutName(const std::string & name) {
@@ -40,12 +41,12 @@ namespace operations_research::math_opt {
     MSK_putobjsense(task.get(),maximize ? MSK_OBJECTIVE_SENSE_MAXIMIZE : MSK_OBJECTIVE_SENSE_MINIMIZE);
   }
 
-  absl::StatusOr<VariableIndex> Mosek::AppendVars(const std::vector<double>& lb,
+  absl::StatusOr<Mosek::VariableIndex> Mosek::AppendVars(const std::vector<double>& lb,
                                            const std::vector<double>& ub) {
     if (lb.size() != ub.size())
-      return absl::InvalidArnumentError("Mismatching lengths of lb and ub");
+      return absl::InvalidArgumentError("Mismatching lengths of lb and ub");
     size_t n = lb.size();
-    int numvar = NumVar();
+    int firstj = NumVar();
     if (n > std::numeric_limits<int>::max())
       return absl::InvalidArgumentError("arguments lb and ub too large");
     
@@ -58,18 +59,18 @@ namespace operations_research::math_opt {
               ( std::isfinite(ub[i]) ? 
                 ( lb[i] < ub[i] ? MSK_BK_RA : MSK_BK_FX )
                 : MSK_BK_LO )
-              : ( std::isfinite(ub[i] ? MSK_BK_UP : MSK_BK_FR) ) ) );
+              : ( std::isfinite(ub[i]) ? MSK_BK_UP : MSK_BK_FR) ) );
     }
     
-    MSK_putvarboundslice(task.get(),(int)n,bk.data(),bl.data(),bu.data());
+    MSK_putvarboundslice(task.get(),firstj,firstj+(int)n,bk.data(),lb.data(),ub.data());
     return absl::OkStatus();
   }
-  absl::StatusOr<ConstraintIndex> Mosek::AppendCons(const std::vector<double>& lb,
+  absl::StatusOr<Mosek::ConstraintIndex> Mosek::AppendCons(const std::vector<double>& lb,
                                              const std::vector<double>& ub) {
     if (lb.size() != ub.size())
       return absl::InvalidArgumentError("Mismatching lengths of lb and ub");
     size_t n = lb.size();
-    int numcon = NumCon();
+    int firsti = NumCon();
     if (n > std::numeric_limits<int>::max())
       return absl::InvalidArgumentError("arguments lb and ub too large");
     
@@ -82,10 +83,10 @@ namespace operations_research::math_opt {
               ( std::isfinite(ub[i]) ? 
                 ( lb[i] < ub[i] ? MSK_BK_RA : MSK_BK_FX )
                 : MSK_BK_LO )
-              : ( std::isfinite(ub[i] ? MSK_BK_UP : MSK_BK_FR) ) ) );
+              : ( std::isfinite(ub[i]) ? MSK_BK_UP : MSK_BK_FR) ) );
     }
     
-    MSK_putconboundslice(task.get(),(int)n,bk.data(),bl.data(),bu.data());
+    MSK_putconboundslice(task.get(),firsti,firsti+(int)n,bk.data(),lb.data(),ub.data());
     return absl::OkStatus();
   }
   absl::Status Mosek::PutVarType(VariableIndex j, bool is_integer) {
@@ -99,7 +100,7 @@ namespace operations_research::math_opt {
     auto n = c.size();
     if (n > NumVar())
       return absl::InvalidArgumentError("Argument c is too large");
-    for (int i = 0; i < n; ++i)
+    for (int j = 0; j < n; ++j)
       MSK_putcj(task.get(),j,c[j]);
     return absl::OkStatus();
   }
@@ -129,7 +130,7 @@ namespace operations_research::math_opt {
   // [ indvar = (negate ? 0.0 : 1.0)
   //   lb <= Ax <= ub ]
   //
-  absl::StatusOr<DisjunctiveConstraintIndex> Mosek::AppendIndicatorConstraint(
+  absl::StatusOr<Mosek::DisjunctiveConstraintIndex> Mosek::AppendIndicatorConstraint(
       bool negate,
       VariableIndex indvar, const std::vector<VariableIndex>& subj,
       const std::vector<double>& cof, double lb, double ub) {
@@ -148,17 +149,17 @@ namespace operations_research::math_opt {
     MSK_appendafes(task.get(),2);
     MSK_appenddjcs(task.get(),1);
 
-    MSK_putafefrowentry(task.get(),nafe, indvar,1.0);
+    MSK_putafefentry(task.get(),nafe, indvar,1.0);
     MSK_putafefrow(task.get(),nafe+1,(int)n,subj.data(),cof.data());
     int64_t dom_eq, dom_lb, dom_ub;
     MSK_appendrzerodomain(task.get(),1,&dom_eq);
-    if (std::isfinite(lb) {
+    if (std::isfinite(lb)) {
       MSK_appendrplusdomain(task.get(),1,&dom_lb);
     }
     else {
       MSK_appendrdomain(task.get(),1,&dom_lb);
     }
-    if (std::isfinite(ub) {
+    if (std::isfinite(ub)) {
       MSK_appendrminusdomain(task.get(),1,&dom_ub);
     }
     else {
@@ -179,13 +180,13 @@ namespace operations_research::math_opt {
     return absl::OkStatus();
   }
   absl::Status Mosek::PutACCName(ConeConstraintIndex acci, const std::string & name) {
-    if (MSK_RES_OK != MSK_putaccname(task.get(),dcci,name.c_str()))
+    if (MSK_RES_OK != MSK_putaccname(task.get(),acci,name.c_str()))
       return absl::InvalidArgumentError("Invalid argument acci");
     return absl::OkStatus();
   }
   
-  absl::StatusOr<ConeConstraintIndex> Mosek::AppendConeConstraint(
-      ConeType ct, const std::vector<int64_t>& sizes,
+  absl::StatusOr<Mosek::ConeConstraintIndex> Mosek::AppendConeConstraint(
+      ConeType ct, const std::vector<int32_t>& sizes,
       const std::vector<VariableIndex>& subj, const std::vector<double>& cof,
       const std::vector<double>& b) {
     size_t n = sizes.size();
@@ -199,7 +200,8 @@ namespace operations_research::math_opt {
       return absl::InvalidArgumentError("Mismatching argument lengths b and ptr");
 
     switch (ct) {
-      case MSK_CT_QUAD: MSK_appendquadraticconedomain(task.get(),n); break;
+      case ConeType::SecondOrderCone: MSK_appendquadraticconedomain(task.get(),n,&domidx); break;
+      case ConeType::RotatedSecondOrderCone: MSK_appendrquadraticconedomain(task.get(),n,&domidx); break;
       default: return absl::InvalidArgumentError("Cone type not supported");
     }
 
@@ -217,7 +219,7 @@ namespace operations_research::math_opt {
     MSK_appendaccseq(task.get(),domidx,n,afei, accb.data());
     MSK_putafefrowlist(task.get(),n,afeidxs.data(),sizes.data(),ptr.data(),nnz,subj.data(),cof.data());
     for (ssize_t i = 0; i < n; ++i) 
-      MSK_putafeglist(task.get(),afei+i,b[i]);
+      MSK_putafeg(task.get(),afei+i,b[i]);
     return acci;
   }
 
@@ -239,14 +241,14 @@ namespace operations_research::math_opt {
   absl::Status Mosek::ClearConeConstraint(ConeConstraintIndex i) {
     int64_t afeidxs;
     double b;
-    if (MSK_RES_OK != MSKputacc(task.get(),i,0,&afeidxs,&b))
+    if (MSK_RES_OK != MSK_putacc(task.get(),i,0,0,&afeidxs,&b))
       return absl::InvalidArgumentError("Invalid constraint index i");
     return absl::OkStatus();
   }
   absl::Status Mosek::ClearDisjunctiveConstraint(DisjunctiveConstraintIndex i) {
     int64_t i64s;
     double f64s;
-    if (MSK_RES_OK != MSKputdjc(task.get(),i,0,&i64s,0,&i64s,&f64s,0,i64s))
+    if (MSK_RES_OK != MSK_putdjc(task.get(),i,0,&i64s,0,&i64s,&f64s,0,&i64s))
       return absl::InvalidArgumentError("Invalid constraint index i");
     return absl::OkStatus();
   }
@@ -329,20 +331,159 @@ namespace operations_research::math_opt {
                               const std::vector<VariableIndex>& subj,
                               const std::vector<double>& cof) 
   {
-
+    if (subi.size() != cof.size() ||
+        subj.size() != cof.size())
+      return absl::InvalidArgumentError("Mismatching lengths of arguments subi, subj, and cof");
+    if (MSK_RES_OK != MSK_putaijlist(task.get(),subi.size(),subi.data(),subj.data(),cof.data()))
+      return absl::InvalidArgumentError("Invalid variable or constraint index in subi or subj");
+    return absl::OkStatus();
   }
 
-  void Mosek::PutParam(MSKiparame par, int value);
-  void Mosek::PutParam(MSKdparame par, double value);
+  absl::StatusOr<MSKrescodee> Mosek::Optimize() {
+    MSKrescodee trm;
+    MSKrescodee r = MSK_optimizetrm(task.get(), &trm);
+    if (MSK_RES_OK == r)
+      return absl::InternalError("Optimization failed");
+
+    return trm;
+  }
+
+  std::tuple<std::string,std::string,MSKrescodee> Mosek::LastError() const {
+    int64_t msglen;
+    MSKrescodee r;
+    if (MSK_RES_OK != MSK_getlasterror64(task.get(),&r,0,&msglen,nullptr)) 
+    {
+      return {"","",MSK_RES_ERR_UNKNOWN};
+    }
+    else 
+    {
+      std::vector<char> msg(msglen+1);
+      char buf[MSK_MAX_STR_LEN];
+      MSK_getlasterror64(task.get(),&r,msglen,&msglen,msg.data());
+      msg[msglen] = 0;
+      
+      MSK_rescodetostr(r,buf);
+      return { msg.data(), buf, r };
+    }
+  }
+
+
+
+
+  double Mosek::GetPrimalObj(MSKsoltypee whichsol) const {
+    if (!SolutionDef(whichsol))
+      return 0.0;
+    double val;
+    MSK_getprimalobj(task.get(),whichsol,&val);
+    return val;
+  }
+  double Mosek::GetDualObj(MSKsoltypee whichsol) const {
+    if (!SolutionDef(whichsol))
+      return 0.0;
+    double val;
+    MSK_getdualobj(task.get(),whichsol,&val);
+    return val;
+  }
+  void Mosek::GetXX(MSKsoltypee whichsol,std::vector<double> & xx) const {
+    xx.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    xx.resize(NumVar());
+    MSK_getxx(task.get(),whichsol,xx.data());
+  }
+  void Mosek::GetSLX(MSKsoltypee whichsol,std::vector<double> & slx) const {
+    slx.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    slx.resize(NumVar());
+    MSK_getslx(task.get(),whichsol,slx.data());
+  }
+  void Mosek::GetSUX(MSKsoltypee whichsol,std::vector<double> & sux) const {
+    sux.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    sux.resize(NumVar());
+    MSK_getsux(task.get(),whichsol,sux.data());
+  }
+  void Mosek::GetSLC(MSKsoltypee whichsol,std::vector<double> & slc) const {
+    slc.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    slc.resize(NumVar());
+    MSK_getslc(task.get(),whichsol,slc.data());
+  }
+  void Mosek::GetSUC(MSKsoltypee whichsol,std::vector<double> & suc) const {
+    suc.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    suc.resize(NumVar());
+    MSK_getsuc(task.get(),whichsol,suc.data());
+  }
+  void Mosek::GetY(MSKsoltypee whichsol,std::vector<double> & y) const {
+    y.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    y.resize(NumVar());
+    MSK_gety(task.get(),whichsol,y.data());
+  }
+  void Mosek::GetSKX(MSKsoltypee whichsol,std::vector<MSKstakeye> & skx) const {
+    skx.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    skx.resize(NumVar());
+    MSK_getskx(task.get(),whichsol,skx.data());
+  }
+  void Mosek::GetSKC(MSKsoltypee whichsol,std::vector<MSKstakeye> & skc) const {
+    skc.clear(); 
+    if (!SolutionDef(whichsol))
+      return;
+    skc.resize(NumVar());
+    MSK_getskc(task.get(),whichsol,skc.data());
+  }
+
+
+
+
+
+
+
+  void Mosek::PutParam(MSKiparame par, int value) {
+    MSK_putintparam(task.get(),par,value);
+  }
+  void Mosek::PutParam(MSKdparame par, double value) {
+    MSK_putdouparam(task.get(),par,value);
+  }
   // Query
-  int Mosek::NumVar() const;
-  int Mosek::NumCon() const;
-  bool Mosek::IsMaximize() const;
-  double Mosek::GetParam(MSKdparame dpar) const;
-  int Mosek::GetParam(MSKiparame ipar) const;
+  int Mosek::NumVar() const 
+  {
+    int n; 
+    MSK_getnumvar(task.get(),&n);
+    return n;
+  }
+  int Mosek::NumCon() const
+  {
+    int n; 
+    MSK_getnumcon(task.get(),&n);
+    return n;
+  }
+  bool Mosek::IsMaximize() const {
+    MSKobjsensee sense;
+    MSK_getobjsense(task.get(),&sense);
+    return sense == MSK_OBJECTIVE_SENSE_MAXIMIZE;
+  }
+  double Mosek::GetParam(MSKdparame dpar) const {
+    double parval = 0.0;
+    MSK_getdouparam(task.get(),dpar,&parval);
+    return parval;
+  }
+  int Mosek::GetParam(MSKiparame ipar) const {
+    int parval;
+    MSK_getintparam(task.get(),ipar,&parval);
+    return parval;
+  }
 
-  static void Mosek::delete_msk_task_func(MSKtask_t);
-
-}
-
-#endif
+  void Mosek::delete_msk_task_func(MSKtask_t t) {
+    MSK_deletetask(&t);
+  }
+} // namespace operations_research::math_opt
+ 

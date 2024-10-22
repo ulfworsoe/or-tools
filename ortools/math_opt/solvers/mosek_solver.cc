@@ -12,7 +12,7 @@
 // limitations under the License.
 
 
-#include "ortools/math_opt/solvers/mosek_solver.h"
+#include "mosek_solver.h"
 #include <unistd.h>
 
 #include <algorithm>
@@ -26,18 +26,17 @@
 #include <utility>
 #include <vector>
 
-#include "mosek.h"
-#include "mosek/mosekwrp.h"
-#include "absl/algorithm/container.h"
-#include "absl/cleanup/cleanup.h"
-#include "absl/container/flat_hash_map.h"
+//#include "absl/algorithm/container.h"
+//#include "absl/cleanup/cleanup.h"
+//#include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
-#include "absl/memory/memory.h"
+//#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "absl/time/clock.h"
-#include "absl/time/time.h"
+//#include "absl/time/clock.h"
+//#include "absl/time/time.h"
 #include "ortools/base/protoutil.h"
 #include "ortools/base/status_builder.h"
 #include "ortools/base/status_macros.h"
@@ -462,6 +461,7 @@ absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
       ++i;
     }
   }
+  return absl::OkStatus();
 } // MosekSolver::AddVariables
 
 absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
@@ -475,6 +475,7 @@ absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
     c[objcof.ids(i)] = objcof.values(i);
   }
   RETURN_IF_ERROR(msk.PutC(c));
+  return absl::OkStatus();
 } // MosekSolver::ReplaceObjective
 
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
@@ -577,7 +578,7 @@ absl::Status MosekSolver::AddConicConstraints(
 
   std::vector<Mosek::VariableIndex> subj;
   std::vector<double>  cof;
-  std::vector<int64_t> sizes;
+  std::vector<int32_t> sizes;
   std::vector<double>  b;
 
   sizes.reserve(cons.size());
@@ -982,10 +983,22 @@ absl::Status MosekSolver::AddConicConstraints(
 // will change indexes of all successive items. Instead we will remove non-zeros
 // and bounds from the deleted items. 
 absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto& model_update) {
-  for (auto id : model_update.deleted_variable_ids()) RETURN_IF_ERROR(msk.ClearVariable(variable_map[id]));
-  for (auto id : model_update.deleted_linear_constraint_ids()) RETURN_IF_ERROR(msk.ClearConstraint(linconstr_map[id]));
-  for (auto id : model_update.second_order_cone_constraint_updates().deleted_constraint_ids()) RETURN_IF_ERROR(msk.ClearConeConstraint(coneconstr_map[id]));
-  for (auto id : model_update.indicator_constraint_updates().deleted_constraint_ids()) RETURN_IF_ERROR(msk.ClearDisjunctiveConstraint(indconstr_map[id]));
+  for (auto id : model_update.deleted_variable_ids()) {
+    variable_map.erase(id);
+    RETURN_IF_ERROR(msk.ClearVariable(variable_map[id]));
+  }
+  for (auto id : model_update.deleted_linear_constraint_ids()) {
+    linconstr_map.erase(id);
+    RETURN_IF_ERROR(msk.ClearConstraint(linconstr_map[id]));
+  }
+  for (auto id : model_update.second_order_cone_constraint_updates().deleted_constraint_ids()) {
+    coneconstr_map.erase(id);
+    RETURN_IF_ERROR(msk.ClearConeConstraint(coneconstr_map[id]));
+  }
+  for (auto id : model_update.indicator_constraint_updates().deleted_constraint_ids()) {
+    indconstr_map.erase(id);
+    RETURN_IF_ERROR(msk.ClearDisjunctiveConstraint(indconstr_map[id]));
+  }
 
   RETURN_IF_ERROR(AddVariables(model_update.new_variables()));
   RETURN_IF_ERROR(UpdateVariables(model_update.variable_updates()));
@@ -1102,6 +1115,166 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
   return res;
 }
 
+
+
+absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(MSKsoltypee whichsol) {
+  auto solsta = msk.GetSolSta(whichsol);
+  PrimalSolutionProto sol;
+  switch (solsta) {
+    case MSK_SOL_STA_OPTIMAL:         
+    case MSK_SOL_STA_INTEGER_OPTIMAL: 
+    case MSK_SOL_STA_PRIM_AND_DUAL_FEAS:
+    case MSK_SOL_STA_PRIM_FEAS:
+      sol.set_feasibility_status(SolutionStatusProto::SOLUTION_STATUS_FEASIBLE); 
+      {
+        sol.set_objective_value(msk.GetPrimalObj(whichsol));
+        std::vector<double> xx; msk.GetXX(whichsol,xx);
+        SparseDoubleVectorProto vals;
+        for (auto &[k,v] : variable_map) 
+        {
+          vals.add_ids(k);
+          vals.add_values(xx[v]);
+        }
+
+        *sol.mutable_variable_values() = std::move(vals);
+      }
+      break;
+    default:
+      return absl::NotFoundError("Primal solution not available");
+  }
+  return std::move(sol);
+}
+absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol) {
+  auto solsta = msk.GetSolSta(whichsol);
+  DualSolutionProto sol;
+  switch (solsta) {
+    case MSK_SOL_STA_OPTIMAL: 
+    case MSK_SOL_STA_PRIM_AND_DUAL_FEAS:
+    case MSK_SOL_STA_DUAL_FEAS:
+      sol.set_objective_value(msk.GetPrimalObj(whichsol));
+      sol.set_feasibility_status(SolutionStatusProto::SOLUTION_STATUS_FEASIBLE); 
+      {
+        std::vector<double> slx; msk.GetSLX(whichsol,slx);
+        std::vector<double> sux; msk.GetSUX(whichsol,sux);
+        SparseDoubleVectorProto vals;
+        for (auto &[k,v] : variable_map) 
+        {
+          vals.add_ids(k);
+          vals.add_values(slx[v]-sux[v]);
+        }
+
+        *sol.mutable_dual_values() = std::move(vals);
+      }
+      {
+        std::vector<double> y; msk.GetY(whichsol,y);
+        SparseDoubleVectorProto vals;
+        for (auto &[k,v] : linconstr_map) 
+        {
+          vals.add_ids(k);
+          vals.add_values(y[v]);
+        }
+
+        *sol.mutable_reduced_costs() = std::move(vals);
+      }
+      break;
+    default:
+      return absl::NotFoundError("Primal solution not available");
+      break;
+  }
+  return std::move(sol);
+}
+absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
+  SolutionProto sol;
+  {
+    auto r = PrimalSolution(whichsol);
+    if (r.ok())
+      *sol.mutable_primal_solution() = std::move(*r);
+  }
+  {
+    auto r = DualSolution(whichsol);
+    if (r.ok())
+      *sol.mutable_dual_solution() = std::move(*r);
+  }
+  if (whichsol == MSK_SOL_BAS) {
+    BasisProto bas;
+    SparseBasisStatusVector csta;
+    SparseBasisStatusVector xsta;
+    std::vector<MSKstakeye> sk; msk.GetSKX(whichsol,sk);
+    for (auto & [k,v] : variable_map) {
+      xsta.add_ids(k);
+      switch (sk[v]) {
+        case MSK_SK_LOW: xsta.add_values(BasisStatusProto::BASIS_STATUS_AT_LOWER_BOUND); break;
+        case MSK_SK_UPR: xsta.add_values(BasisStatusProto::BASIS_STATUS_AT_UPPER_BOUND); break;
+        case MSK_SK_FIX: xsta.add_values(BasisStatusProto::BASIS_STATUS_FIXED_VALUE); break;
+        case MSK_SK_BAS: xsta.add_values(BasisStatusProto::BASIS_STATUS_BASIC); break;
+        case MSK_SK_INF: 
+        case MSK_SK_SUPBAS:
+        case MSK_SK_UNK: xsta.add_values(BasisStatusProto::BASIS_STATUS_UNSPECIFIED); break;
+      }
+    }
+    sk.clear(); msk.GetSKC(whichsol,sk);
+    for (auto & [k,v] : linconstr_map) {
+      csta.add_ids(k);
+      switch (sk[v]) {
+        case MSK_SK_LOW: csta.add_values(BasisStatusProto::BASIS_STATUS_AT_LOWER_BOUND); break;
+        case MSK_SK_UPR: csta.add_values(BasisStatusProto::BASIS_STATUS_AT_UPPER_BOUND); break;
+        case MSK_SK_FIX: csta.add_values(BasisStatusProto::BASIS_STATUS_FIXED_VALUE); break;
+        case MSK_SK_BAS: csta.add_values(BasisStatusProto::BASIS_STATUS_BASIC); break;
+        case MSK_SK_INF: 
+        case MSK_SK_SUPBAS:
+        case MSK_SK_UNK: csta.add_values(BasisStatusProto::BASIS_STATUS_UNSPECIFIED); break;
+      }
+    }
+    *bas.mutable_variable_status() = std::move(xsta);
+    *bas.mutable_constraint_status() = std::move(csta);
+
+    *sol.mutable_basis() = std::move(bas);
+  }
+  return std::move(sol);
+}
+
+absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(MSKsoltypee whichsol) {
+  auto solsta = msk.GetSolSta(whichsol);
+  if (solsta == MSK_SOL_STA_DUAL_INFEAS_CER)
+    return absl::NotFoundError("Certificate not available");
+
+  std::vector<double> xx; msk.GetXX(whichsol,xx);
+  PrimalRayProto ray;
+  SparseDoubleVectorProto data;
+  for (auto &[k,v] : variable_map) {
+    data.add_ids(k);
+    data.add_values(xx[v]);
+  }
+  *ray.mutable_variable_values() = data;
+  return ray;
+}
+
+absl::StatusOr<DualRayProto>   MosekSolver::DualRay(MSKsoltypee whichsol) {
+  auto solsta = msk.GetSolSta(whichsol);
+
+  if (solsta == MSK_SOL_STA_PRIM_INFEAS_CER)
+    return absl::NotFoundError("Certificate not available");
+
+  std::vector<double> slx; msk.GetSLX(whichsol,slx);
+  std::vector<double> sux; msk.GetSUX(whichsol,slx);
+  std::vector<double> y; msk.GetY(whichsol,y);
+  DualRayProto ray;
+  SparseDoubleVectorProto xdata;
+  SparseDoubleVectorProto cdata;
+  for (auto &[k,v] : variable_map) {
+    xdata.add_ids(k);
+    xdata.add_values(slx[v] - sux[v]);
+  }
+  for (auto &[k,v] : linconstr_map) {
+    cdata.add_ids(k);
+    cdata.add_values(y[v]);
+  }
+  *ray.mutable_dual_values() = xdata;
+  *ray.mutable_reduced_costs() = cdata;
+  return ray;
+}
+
+
 absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     const SolveParametersProto& parameters,
     const ModelSolveParametersProto& model_parameters,
@@ -1134,6 +1307,30 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
 
   
   double dpar_optimizer_max_time = msk.GetParam(MSK_DPAR_OPTIMIZER_MAX_TIME);
+  int ipar_intpnt_max_iterations = msk.GetParam(MSK_IPAR_INTPNT_MAX_ITERATIONS);
+  int ipar_sim_max_iterations = msk.GetParam(MSK_IPAR_SIM_MAX_ITERATIONS);
+  double dpar_upper_obj_cut = msk.GetParam(MSK_DPAR_UPPER_OBJ_CUT);
+  double dpar_lower_obj_cut = msk.GetParam(MSK_DPAR_LOWER_OBJ_CUT);
+  int ipar_num_threads = msk.GetParam(MSK_IPAR_NUM_THREADS);
+  double dpar_mio_tol_abs_gap = msk.GetParam(MSK_DPAR_MIO_TOL_ABS_GAP);
+  double dpar_mio_tol_rel_gap = msk.GetParam(MSK_DPAR_MIO_TOL_REL_GAP);
+  double dpar_intpnt_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_TOL_REL_GAP);
+  double dpar_intpnt_co_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP);
+  int ipar_optimizer = msk.GetParam(MSK_IPAR_OPTIMIZER);
+
+  auto _guard_reset_params = absl::MakeCleanup([&](){
+      msk.PutParam(MSK_DPAR_OPTIMIZER_MAX_TIME,dpar_optimizer_max_time);
+      msk.PutParam(MSK_IPAR_INTPNT_MAX_ITERATIONS,ipar_intpnt_max_iterations);
+      msk.PutParam(MSK_IPAR_SIM_MAX_ITERATIONS,ipar_sim_max_iterations);
+      msk.PutParam(MSK_DPAR_UPPER_OBJ_CUT,dpar_upper_obj_cut);
+      msk.PutParam(MSK_DPAR_LOWER_OBJ_CUT,dpar_lower_obj_cut);
+      msk.PutParam(MSK_IPAR_NUM_THREADS,ipar_num_threads);
+      msk.PutParam(MSK_DPAR_MIO_TOL_ABS_GAP,dpar_mio_tol_abs_gap);
+      msk.PutParam(MSK_DPAR_MIO_TOL_REL_GAP,dpar_mio_tol_rel_gap);
+      msk.PutParam(MSK_DPAR_INTPNT_TOL_REL_GAP,dpar_intpnt_tol_rel_gap);
+      msk.PutParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP,dpar_intpnt_co_tol_rel_gap);
+  });
+
   if (parameters.has_time_limit()) {
     OR_ASSIGN_OR_RETURN3(
         const absl::Duration time_limit,
@@ -1142,8 +1339,6 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     msk.PutParam(MSK_DPAR_OPTIMIZER_MAX_TIME, absl::ToDoubleSeconds(time_limit));
   }
 
-  int ipar_intpnt_max_iterations = msk.GetParam(MSK_IPAR_INTPNT_MAX_ITERATIONS);
-  int ipar_sim_max_iterations = msk.GetParam(MSK_IPAR_SIM_MAX_ITERATIONS);
   if (parameters.has_iteration_limit()) {
     const int iter_limit = parameters.iteration_limit();
 
@@ -1163,8 +1358,6 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   // Not supported by MOSEK?
   //if (parameters.has_cutoff_limit()) {
   //}
-  double dpar_upper_obj_cut = msk.GetParam(MSK_DPAR_UPPER_OBJ_CUT);
-  double dpar_lower_obj_cut = msk.GetParam(MSK_DPAR_LOWER_OBJ_CUT);
   if (parameters.has_objective_limit()) {
     if (msk.IsMaximize()) 
       msk.PutParam(MSK_DPAR_UPPER_OBJ_CUT, parameters.cutoff_limit());
@@ -1172,26 +1365,20 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
       msk.PutParam(MSK_DPAR_LOWER_OBJ_CUT, parameters.cutoff_limit());
   }
 
-  int ipar_num_threads = msk.GetParam(MSK_IPAR_NUM_THREADS);
   if (parameters.has_threads()) {
     msk.PutParam(MSK_IPAR_NUM_THREADS, parameters.threads());
   }
 
-  double dpar_mio_tol_abs_gap = msk.GetParam(MSK_DPAR_MIO_TOL_ABS_GAP);
   if (parameters.has_absolute_gap_tolerance()) {
     msk.PutParam(MSK_DPAR_MIO_TOL_ABS_GAP, parameters.absolute_gap_tolerance());
   }
   
-  double dpar_mio_tol_rel_gap = msk.GetParam(MSK_DPAR_MIO_TOL_REL_GAP);
-  double dpar_intpnt_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_TOL_REL_GAP);
-  double dpar_intpnt_co_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP);
   if (parameters.has_relative_gap_tolerance()) {
     msk.PutParam(MSK_DPAR_INTPNT_TOL_REL_GAP, parameters.absolute_gap_tolerance());
     msk.PutParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
     msk.PutParam(MSK_DPAR_MIO_TOL_REL_GAP, parameters.absolute_gap_tolerance());
   }
 
-  int ipar_optimizer = msk.GetParam(MSK_IPAR_OPTIMIZER);
   switch (parameters.lp_algorithm()) {
     case LP_ALGORITHM_BARRIER:
       msk.PutParam(MSK_IPAR_OPTIMIZER, MSK_OPTIMIZER_INTPNT);
@@ -1209,23 +1396,110 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   }
 
   // TODO: parameter enable_output
-  // TODO optimize
+  
+  MSKrescodee trm;
+  {
+    auto r = msk.Optimize();
+    if (! r.ok()) return r.status();
+    trm = *r;
+  }
 
-  // Reset Parameters
+  MSKsoltypee whichsol{};
+  bool soldef = true;
+  if      (msk.SolutionDef(MSK_SOL_ITG)) { whichsol = MSK_SOL_ITG; }
+  else if (msk.SolutionDef(MSK_SOL_BAS)) { whichsol = MSK_SOL_BAS; }
+  else if (msk.SolutionDef(MSK_SOL_ITR)) { whichsol = MSK_SOL_ITR; }
+  else { soldef = false; }
 
-  msk.PutParam(MSK_DPAR_OPTIMIZER_MAX_TIME,dpar_optimizer_max_time);
-  msk.PutParam(MSK_IPAR_INTPNT_MAX_ITERATIONS,ipar_intpnt_max_iterations);
-  msk.PutParam(MSK_IPAR_SIM_MAX_ITERATIONS,ipar_sim_max_iterations);
-  msk.PutParam(MSK_DPAR_UPPER_OBJ_CUT,dpar_upper_obj_cut);
-  msk.PutParam(MSK_DPAR_LOWER_OBJ_CUT,dpar_lower_obj_cut);
-  msk.PutParam(MSK_IPAR_NUM_THREADS,ipar_num_threads);
-  msk.PutParam(MSK_DPAR_MIO_TOL_ABS_GAP,dpar_mio_tol_abs_gap);
-  msk.PutParam(MSK_DPAR_MIO_TOL_REL_GAP,dpar_mio_tol_rel_gap);
-  msk.PutParam(MSK_DPAR_INTPNT_TOL_REL_GAP,dpar_intpnt_tol_rel_gap);
-  msk.PutParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP,dpar_intpnt_co_tol_rel_gap);
+  TerminationProto trmp;
+  MSKprostae prosta{};
+  MSKsolstae solsta{};
+  if (! soldef) {
+    auto [msg,name,code] = msk.LastError();
+    trmp = TerminateForReason(msk.IsMaximize(), TerminationReasonProto::TERMINATION_REASON_NO_SOLUTION_FOUND, msg);
+  }
+  else {
+    prosta = msk.GetProSta(whichsol);
+    solsta = msk.GetSolSta(whichsol);
 
+    // Attempt to determine TerminationProto from Mosek Termination code,
+    // problem status and solution status.
 
+    if      (solsta == MSK_SOL_STA_OPTIMAL ||
+             solsta == MSK_SOL_STA_INTEGER_OPTIMAL) 
+      trmp = OptimalTerminationProto(msk.GetPrimalObj(whichsol),msk.GetDualObj(whichsol),"");
+    else if (solsta == MSK_SOL_STA_PRIM_INFEAS_CER) 
+      trmp = InfeasibleTerminationProto(msk.IsMaximize(), FeasibilityStatusProto::FEASIBILITY_STATUS_FEASIBLE);
+    else if (prosta == MSK_PRO_STA_PRIM_INFEAS_OR_UNBOUNDED)
+      trmp = InfeasibleOrUnboundedTerminationProto(msk.IsMaximize());
+    else if (solsta == MSK_SOL_STA_DUAL_INFEAS_CER)
+      trmp = UnboundedTerminationProto(msk.IsMaximize());
+    else if (solsta == MSK_SOL_STA_PRIM_AND_DUAL_FEAS ||
+             solsta == MSK_SOL_STA_PRIM_FEAS) {
+      LimitProto lim = LimitProto::LIMIT_UNSPECIFIED;
+      switch (trm) {
+        case MSK_RES_TRM_MAX_ITERATIONS: lim = LimitProto::LIMIT_ITERATION; break;
+        case MSK_RES_TRM_MAX_TIME: lim = LimitProto::LIMIT_TIME; break;
+        case MSK_RES_TRM_NUM_MAX_NUM_INT_SOLUTIONS: lim = LimitProto::LIMIT_SOLUTION; break;
+        case MSK_RES_TRM_SERVER_MAX_MEMORY: lim = LimitProto::LIMIT_MEMORY; break;
+        // LIMIT_CUTOFF
+        case MSK_RES_TRM_OBJECTIVE_RANGE: lim = LimitProto::LIMIT_OBJECTIVE; break;
+        case MSK_RES_TRM_NUMERICAL_PROBLEM: lim = LimitProto::LIMIT_NORM; break;
+        case MSK_RES_TRM_USER_CALLBACK: lim = LimitProto::LIMIT_INTERRUPTED; break;
+        case MSK_RES_TRM_STALL: lim = LimitProto::LIMIT_SLOW_PROGRESS; break;
+        default: lim = LimitProto::LIMIT_OTHER; break;
+      }
+      if      (solsta == MSK_SOL_STA_PRIM_AND_DUAL_FEAS)
+        trmp = FeasibleTerminationProto(msk.IsMaximize(),lim,msk.GetPrimalObj(whichsol),msk.GetDualObj(whichsol));
+      else 
+        trmp = FeasibleTerminationProto(msk.IsMaximize(),lim,msk.GetPrimalObj(whichsol),std::nullopt);
+    }
+    else {
+      trmp = NoSolutionFoundTerminationProto(msk.IsMaximize(), LimitProto::LIMIT_UNSPECIFIED);
+    }
+  }
 
+  SolveResultProto result;
+  *result.mutable_termination() = trmp;
+
+  if (soldef) {
+    switch (solsta) { 
+      case MSK_SOL_STA_OPTIMAL:
+      case MSK_SOL_STA_INTEGER_OPTIMAL:
+      case MSK_SOL_STA_PRIM_FEAS:
+      case MSK_SOL_STA_DUAL_FEAS:
+      case MSK_SOL_STA_PRIM_AND_DUAL_FEAS:
+        {
+          auto r = Solution(whichsol);
+          if (r.ok()) {
+            *result.add_solutions() = std::move(*r);
+          }
+        }
+        break;
+      case MSK_SOL_STA_DUAL_INFEAS_CER:
+        {
+          auto r = PrimalRay(whichsol);
+          if (r.ok()) {
+            *result.add_primal_rays() = std::move(*r);
+          }
+        }
+        break;
+      case MSK_SOL_STA_PRIM_INFEAS_CER:
+        {
+          auto r = DualRay(whichsol);
+          if (r.ok()) {
+            *result.add_dual_rays() = std::move(*r);
+          }
+        }
+        break;
+      case MSK_SOL_STA_PRIM_ILLPOSED_CER:
+      case MSK_SOL_STA_DUAL_ILLPOSED_CER:
+      case MSK_SOL_STA_UNKNOWN:
+        break;
+    }
+  }
+  return result;
+}
 
 
 #if 0
