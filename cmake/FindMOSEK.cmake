@@ -90,18 +90,33 @@ if(NOT MOSEK_PLATFORM_DIR)
   endif()
 endif()
 
+
 if(NOT MOSEK_PLATFORM_DIR)
     message(FATAL_ERROR "MOSEK_PLATFORM_DIR: not found")
 else()
   message(STATUS "MOSEK_PLATFORM_DIR detected: ${MOSEK_PLATFORM_DIR}")
-  set(MOSEK_FOUND TRUE)
+  set(MOSEK_PFDIR_FOUND TRUE)
 endif()
 
-if(MOSEK_FOUND AND NOT TARGET Mosek::Mosek)
+
+if(MOSEK_PFDIR_FOUND AND NOT TARGET Mosek::Mosek)
   add_library(mosek::mosek UNKNOWN IMPORTED)
   
   find_path(MOSEKINC mosek.h HINTS ${MOSEK_PLATFORM_DIR}/h)
   find_library(LIBMOSEK mosek64 HINTS ${MOSEK_PLATFORM_DIR}/bin)
+
+  if(LIBMOSEK) 
+      set_target_properties(mosek::mosek PROPERTIES IMPORTED_LOCATION ${LIBMOSEK})
+  endif()
+
+  if (MOSEKINC)
+      target_include_directories(mosek::mosek INTERFACE "${MOSEKINC}")
+  endif()
+elseif(NOT TARGET Mosek::Mosek)
+  add_library(mosek::mosek UNKNOWN IMPORTED)
+  
+  find_path(MOSEKINC mosek.h)
+  find_library(LIBMOSEK mosek64)
 
   if(LIBMOSEK) 
       set_target_properties(mosek::mosek PROPERTIES IMPORTED_LOCATION ${LIBMOSEK})

@@ -119,6 +119,10 @@ namespace operations_research::math_opt {
     if (n > std::numeric_limits<int>::max())
       return absl::InvalidArgumentError("Arguments subi, subj, valij are too long");
 
+    std::cout << "Mosek::PutAIJList(): #nonzeros: " << n << std::endl;
+    std::cout << "   subi = [ "; for (auto & v : subi) std::cout << v << " "; std::cout << "]" << std::endl;
+    std::cout << "   subj = [ "; for (auto & v : subj) std::cout << v << " "; std::cout << "]" << std::endl;
+    std::cout << "   values = [ "; for (auto & v : valij) std::cout << v << " "; std::cout << "]" << std::endl;
     if (MSK_RES_OK != MSK_putaijlist(task.get(),(int)n,subi.data(),subj.data(),valij.data()))
       return absl::InvalidArgumentError("Invalid index argument subi or subj");
     return absl::OkStatus();

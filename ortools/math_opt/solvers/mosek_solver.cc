@@ -75,7 +75,7 @@ absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
   int num_vars = vars.ids_size();
   int firstvar = msk.NumVar();
 
-  { int i = 0; for (const auto & v : vars.ids()) variable_map[v] = firstvar+i; ++i; }
+  { int i = 0; for (const auto & v : vars.ids()) { variable_map[v] = firstvar+i; ++i; } } 
 
   std::vector<double> lbx(num_vars);
   std::vector<double> ubx(num_vars);
@@ -109,6 +109,7 @@ absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
 absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
   std::cout << "MosekSolver::ReplaceObjective()" << std::endl;
   msk.PutObjName(obj.name());
+  RETURN_IF_ERROR(msk.UpdateObjectiveSense(obj.maximize()));
   auto objcof = obj.linear_coefficients();
   msk.PutCFix(obj.offset());
   auto num_vars = msk.NumVar();
@@ -123,7 +124,7 @@ absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
 
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
                                          const SparseDoubleMatrixProto& adata) {
-  std::cout << "MosekSolver::AddConstraints()" << std::endl;
+  std::cout << "MosekSolver::AddConstraints(cons,data)" << std::endl;
   int firstcon = msk.NumCon();
   auto numcon = cons.ids_size();
   {
@@ -160,12 +161,13 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
     subi.push_back(linconstr_map[id]);
   for (const auto c : adata.coefficients()) 
     valij.push_back(c);
+  std::cout << "MosekSolver::AddConstraints(): #constraints: " << numcon << ", #nonzeros: " << nnz << std::endl;
   RETURN_IF_ERROR(msk.PutAIJList(subi,subj,valij));
 
   return absl::OkStatus();
 }
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto & cons) {
-  std::cout << "MosekSolver::AddConstraints()" << std::endl;
+  std::cout << "MosekSolver::AddConstraints(cons)" << std::endl;
   int firstcon = msk.NumCon();
   auto numcon = cons.ids_size();
   {
