@@ -63,7 +63,7 @@ namespace operations_research::math_opt {
     }
     
     MSK_putvarboundslice(task.get(),firstj,firstj+(int)n,bk.data(),lb.data(),ub.data());
-    return absl::OkStatus();
+    return firstj;
   }
   absl::StatusOr<Mosek::ConstraintIndex> Mosek::AppendCons(const std::vector<double>& lb,
                                              const std::vector<double>& ub) {
@@ -87,7 +87,7 @@ namespace operations_research::math_opt {
     }
     
     MSK_putconboundslice(task.get(),firsti,firsti+(int)n,bk.data(),lb.data(),ub.data());
-    return absl::OkStatus();
+    return firsti;
   }
   absl::Status Mosek::PutVarType(VariableIndex j, bool is_integer) {
     if (MSK_RES_OK != MSK_putvartype(task.get(),j,is_integer ? MSK_VAR_TYPE_INT : MSK_VAR_TYPE_CONT))
@@ -342,10 +342,14 @@ namespace operations_research::math_opt {
     return absl::OkStatus();
   }
 
+  void Mosek::WriteData(const char * filename) const {
+    MSK_writedata(task.get(),filename);
+  }
+    
   absl::StatusOr<MSKrescodee> Mosek::Optimize() {
     MSKrescodee trm;
     MSKrescodee r = MSK_optimizetrm(task.get(), &trm);
-    if (MSK_RES_OK == r)
+    if (MSK_RES_OK != r)
       return absl::InternalError("Optimization failed");
 
     return trm;

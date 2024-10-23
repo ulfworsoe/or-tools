@@ -110,6 +110,9 @@ class Mosek {
     void GetSKX(MSKsoltypee whichsol,std::vector<MSKstakeye> & skx) const;
     void GetSKC(MSKsoltypee whichsol,std::vector<MSKstakeye> & skc) const;
 
+    // Other
+    void WriteData(const char * filename) const;
+
   private:    
     static void delete_msk_task_func(MSKtask_t);
 
