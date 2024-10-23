@@ -100,7 +100,7 @@ std::ostream & mosek::operator<<(std::ostream & s, ProSta prosta) {
 }
 
 absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
-  std::cout << "MosekSolver::AddVariables()" << std::endl;
+  //std::cout << "MosekSolver::AddVariables()" << std::endl;
   int num_vars = vars.ids_size();
   int firstvar = msk.NumVar();
 
@@ -136,7 +136,7 @@ absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
 } // MosekSolver::AddVariables
 
 absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
-  std::cout << "MosekSolver::ReplaceObjective()" << std::endl;
+  //std::cout << "MosekSolver::ReplaceObjective()" << std::endl;
   msk.PutObjName(obj.name());
   RETURN_IF_ERROR(msk.UpdateObjectiveSense(obj.maximize()));
   auto objcof = obj.linear_coefficients();
@@ -153,7 +153,7 @@ absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
 
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
                                          const SparseDoubleMatrixProto& adata) {
-  std::cout << "MosekSolver::AddConstraints(cons,data)" << std::endl;
+  //std::cout << "MosekSolver::AddConstraints(cons,data)" << std::endl;
   int firstcon = msk.NumCon();
   auto numcon = cons.ids_size();
   {
@@ -184,22 +184,22 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
   std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
   std::vector<double> valij; valij.reserve(nnz);
 
-  std::cout << "MosekSolver::AddConstraints(): var map : " << std::endl;
-  for (auto [k,v] : variable_map)
-    std::cout << "    " << k << " : " << v << std::endl;
+  //std::cout << "MosekSolver::AddConstraints(): var map : " << std::endl;
+  //for (auto [k,v] : variable_map)
+  //  std::cout << "    " << k << " : " << v << std::endl;
   for (const auto id : adata.row_ids())
     subi.push_back(linconstr_map[id]);
   for (const auto id : adata.column_ids())
     subj.push_back(variable_map[id]);
   for (const auto c : adata.coefficients()) 
     valij.push_back(c);
-  std::cout << "MosekSolver::AddConstraints(): #constraints: " << numcon << ", #nonzeros: " << nnz << std::endl;
+  //std::cout << "MosekSolver::AddConstraints(): #constraints: " << numcon << ", #nonzeros: " << nnz << std::endl;
   RETURN_IF_ERROR(msk.PutAIJList(subi,subj,valij));
 
   return absl::OkStatus();
 }
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto & cons) {
-  std::cout << "MosekSolver::AddConstraints(cons)" << std::endl;
+  //std::cout << "MosekSolver::AddConstraints(cons)" << std::endl;
   int firstcon = msk.NumCon();
   auto numcon = cons.ids_size();
   {
@@ -230,7 +230,7 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto & cons) {
 
 absl::Status MosekSolver::AddIndicatorConstraints(
     const ::google::protobuf::Map<int64_t, IndicatorConstraintProto>& cons) {
-  std::cout << "MosekSolver::AddIndicatorConstraints()" << std::endl;
+  //std::cout << "MosekSolver::AddIndicatorConstraints()" << std::endl;
   int i = 0;
   std::vector<Mosek::VariableIndex> subj;
   std::vector<double> cof;
@@ -255,7 +255,7 @@ absl::Status MosekSolver::AddIndicatorConstraints(
 absl::Status MosekSolver::AddConicConstraints(
   const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto>&
       cons) {
-  std::cout << "MosekSolver::AddConicConstraints()" << std::endl;
+  //std::cout << "MosekSolver::AddConicConstraints()" << std::endl;
 
   std::vector<Mosek::VariableIndex> subj;
   std::vector<double>  cof;
@@ -297,7 +297,7 @@ absl::Status MosekSolver::AddConicConstraints(
 
 
 absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto& model_update) {
-  std::cout << "MosekSolver::Update()" << std::endl;
+  //std::cout << "MosekSolver::Update()" << std::endl;
   for (auto id : model_update.deleted_variable_ids()) {
     variable_map.erase(id);
     RETURN_IF_ERROR(msk.ClearVariable(variable_map[id]));
@@ -329,7 +329,7 @@ absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto& model_update) {
 }
 
 absl::Status MosekSolver::UpdateVariables(const VariableUpdatesProto & varupds) {
-  std::cout << "MosekSolver::UpdateVariables()" << std::endl;
+  //std::cout << "MosekSolver::UpdateVariables()" << std::endl;
   for (int64_t i = 0, n = varupds.lower_bounds().ids_size(); i < n; ++i) {
     RETURN_IF_ERROR(msk.UpdateVariableLowerBound(variable_map[varupds.lower_bounds().ids(i)], varupds.lower_bounds().values(i)));
   }
@@ -342,7 +342,7 @@ absl::Status MosekSolver::UpdateVariables(const VariableUpdatesProto & varupds) 
   return absl::OkStatus();
 }
 absl::Status MosekSolver::UpdateConstraints(const LinearConstraintUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds) {
-  std::cout << "MosekSolver::UpdateConstraints()" << std::endl;
+  //std::cout << "MosekSolver::UpdateConstraints()" << std::endl;
   for (int64_t i = 0, n = conupds.lower_bounds().ids_size(); i < n; ++i) {
     RETURN_IF_ERROR(msk.UpdateConstraintLowerBound(linconstr_map[conupds.lower_bounds().ids(i)], conupds.lower_bounds().values(i)));
   }
@@ -399,7 +399,7 @@ absl::Status MosekSolver::UpdateConstraint(const IndicatorConstraintUpdatesProto
 
 absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
     const ModelProto& model, const InitArgs&) {
-  std::cout << "MosekSolver::New()" << std::endl;
+  //std::cout << "MosekSolver::New()" << std::endl;
   RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
   
   if (!model.auxiliary_objectives().empty())
@@ -494,8 +494,8 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol
             auto v = variable_map[k];
             vals.add_values(slx[v]-sux[v]);
           }
-          std::cout << "  -- reduced cost: " << std::endl;
-          for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
+          //std::cout << "  -- reduced cost: " << std::endl;
+          //for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
           *sol.mutable_reduced_costs() = std::move(vals);              
         }
         {
@@ -509,8 +509,8 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol
             vals.add_ids(k);
             vals.add_values(y[linconstr_map[k]]);
           }
-          std::cout << "  -- dual values: " << std::endl;
-          for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
+          //std::cout << "  -- dual values: " << std::endl;
+          //for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
 
           *sol.mutable_dual_values() = std::move(vals);
         }
@@ -522,7 +522,7 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol
   return std::move(sol);
 }
 absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
-  std::cout << "MosekSolver::Solution()" << std::endl;
+  //std::cout << "MosekSolver::Solution()" << std::endl;
   SolutionProto sol;
   {
     auto r = PrimalSolution(whichsol);
@@ -537,7 +537,7 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
 
   std::vector<int64_t> keys; keys.reserve(std::max(variable_map.size(),linconstr_map.size()));
   if (whichsol == MSK_SOL_BAS) {
-    std::cout << "MosekSolver::Solution(): Basis!" << std::endl;
+    //std::cout << "MosekSolver::Solution(): Basis!" << std::endl;
     BasisProto bas;
     SparseBasisStatusVector csta;
     SparseBasisStatusVector xsta;
@@ -669,7 +669,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   // - EmphasisProto heuristics
   // - EmphasisProto scaling
 
-  std::cout << "MosekSolver::Solve()" << std::endl;
+  //std::cout << "MosekSolver::Solve()" << std::endl;
   
   double dpar_optimizer_max_time = msk.GetParam(MSK_DPAR_OPTIMIZER_MAX_TIME);
   int ipar_intpnt_max_iterations = msk.GetParam(MSK_IPAR_INTPNT_MAX_ITERATIONS);
@@ -766,7 +766,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   {
     auto r = msk.Optimize();
     msk.WriteData("__test.ptf");
-    std::cout << "MosekSolver::Solve() optimize -> " << r << std::endl;
+    //std::cout << "MosekSolver::Solve() optimize -> " << r << std::endl;
     if (! r.ok()) return r.status();
     trm = *r;
   }
@@ -786,7 +786,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     trmp = TerminateForReason(msk.IsMaximize(), TerminationReasonProto::TERMINATION_REASON_NO_SOLUTION_FOUND, msg);
   }
   else {
-    std::cout << "MosekSolver::Solve() solution is defined " << whichsol << std::endl;
+    //std::cout << "MosekSolver::Solve() solution is defined " << whichsol << std::endl;
     prosta = msk.GetProSta(whichsol);
     solsta = msk.GetSolSta(whichsol);
 
@@ -795,7 +795,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
 
     if      (solsta == mosek::SolSta::OPTIMAL ||
              solsta == mosek::SolSta::INTEGER_OPTIMAL) {
-      std::cout << "MosekSolver::Solve() trmp = Optimal! " << std::endl;
+      //std::cout << "MosekSolver::Solve() trmp = Optimal! " << std::endl;
       trmp = OptimalTerminationProto(msk.GetPrimalObj(whichsol),msk.GetDualObj(whichsol),"");
     }
     else if (solsta == mosek::SolSta::PRIM_INFEAS_CER) 
@@ -835,7 +835,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   *result.mutable_termination() = trmp;
 
   if (soldef) {
-    std::cout << "MosekSolver::Solve() whichsol = " << whichsol << ", solsta =  " << solsta << std::endl;
+    //std::cout << "MosekSolver::Solve() whichsol = " << whichsol << ", solsta =  " << solsta << std::endl;
     switch (solsta) { 
       case mosek::SolSta::OPTIMAL:
       case mosek::SolSta::INTEGER_OPTIMAL:
@@ -844,7 +844,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
       case mosek::SolSta::PRIM_AND_DUAL_FEAS:
         {
           auto r = Solution(whichsol);
-          std::cout << "MosekSolver::Solve() solution ok ? " << r.ok() << std::endl;
+          //std::cout << "MosekSolver::Solve() solution ok ? " << r.ok() << std::endl;
           if (r.ok()) {
             *result.add_solutions() = std::move(*r);
           }
@@ -876,99 +876,6 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
 }
 
 
-#if 0
-  const absl::Time start = absl::Now();
-  auto set_solve_time = [&start](SolveResultProto& result) -> absl::Status {
-    const absl::Duration solve_time = absl::Now() - start;
-    OR_ASSIGN_OR_RETURN3(*result.mutable_solve_stats()->mutable_solve_time(),
-                         util_time::EncodeGoogleApiProto(solve_time),
-                         _ << "error encoding solve_stats.solve_time");
-    return absl::OkStatus();
-  };
-
-  RETURN_IF_ERROR(ListInvertedBounds().ToStatus());
-  // TODO(b/271595607): delete this code once we upgrade HiGHS, if HiGHS does
-  // return a proper infeasibility status for models with empty integer bounds.
-  const bool is_maximize = highs_->getModel().lp_.sense_ == ObjSense::kMaximize;
-  for (const auto& [var_id, bounds] : variable_data_) {
-    if (bounds.rounded_bounds_cross()) {
-      SolveResultProto result =
-          ResultForIntegerInfeasible(is_maximize, var_id, bounds.lb, bounds.ub);
-      RETURN_IF_ERROR(set_solve_time(result));
-      return result;
-    }
-  }
-
-  BufferedMessageCallback buffered_message_callback(std::move(message_cb));
-  if (buffered_message_callback.has_user_message_callback()) {
-    RETURN_IF_ERROR(ToStatus(
-        highs_->setLogCallback(&HighsLogCallback, &buffered_message_callback)))
-        << "failed to register logging callback";
-  }
-  auto message_cb_cleanup =
-      absl::MakeCleanup([this, &buffered_message_callback]() {
-        if (buffered_message_callback.has_user_message_callback()) {
-          // As of March 6th, 2023, this code never returns an error (see the
-          // HiGHS source). If we really want to be able to recover from errors,
-          // more care is needed, as we need to prevent HiGHS from invoking the
-          // user callback after this function, since it will not be alive (e.g.
-          // wrap the user callback in a new callback that is guarded by an
-          // atomic bool that we disable here). Further, to propagate this
-          // error, we need a class instead of absl::Cleanup.
-          CHECK_OK(ToStatus(highs_->setLogCallback(nullptr, nullptr)));
-          buffered_message_callback.Flush();
-        }
-      });
-
-  bool is_integer = false;
-  // NOTE: lp_.integrality_ may be empty if the problem is an LP.
-  for (const HighsVarType var_type : highs_->getModel().lp_.integrality_) {
-    if (var_type == HighsVarType::kInteger) {
-      is_integer = true;
-      break;
-    }
-  }
-  auto it = parameters.highs().bool_options().find("solve_relaxation");
-  if (it != parameters.highs().bool_options().end() && it->second) {
-    is_integer = false;
-  }
-  ASSIGN_OR_RETURN(
-      const std::unique_ptr<HighsOptions> options,
-      MakeOptions(parameters,
-                  buffered_message_callback.has_user_message_callback(),
-                  is_integer));
-  RETURN_IF_ERROR(ToStatus(highs_->passOptions(*options)));
-  RETURN_IF_ERROR(ToStatus(highs_->run()));
-  std::move(message_cb_cleanup).Invoke();
-  // When the model is empty, highs_->getInfo() is invalid, so we bail out.
-  if (highs_->getModelStatus() == HighsModelStatus::kModelEmpty) {
-    SolveResultProto result = ResultForHighsModelStatusModelEmpty(
-        is_maximize, highs_->getModel().lp_.offset_, lin_con_data_);
-    RETURN_IF_ERROR(set_solve_time(result));
-    return result;
-  }
-  const HighsInfo& info = highs_->getInfo();
-  if (!info.valid) {
-    return absl::InternalError("HighsInfo not valid");
-  }
-
-  SolveResultProto result;
-  ASSIGN_OR_RETURN(SolutionsAndClaims solutions_and_claims,
-                   ExtractSolutionAndRays(model_parameters));
-  for (SolutionProto& solution : solutions_and_claims.solutions) {
-    *result.add_solutions() = std::move(solution);
-  }
-  ASSIGN_OR_RETURN(*result.mutable_termination(),
-                   MakeTermination(highs_->getModelStatus(), info, is_integer,
-                                   parameters.has_node_limit(),
-                                   parameters.has_solution_limit(), is_maximize,
-                                   solutions_and_claims.solution_claims));
-
-  ASSIGN_OR_RETURN(*result.mutable_solve_stats(), ToSolveStats(info));
-
-  RETURN_IF_ERROR(set_solve_time(result));
-  return result;
-#endif
 
 absl::StatusOr<ComputeInfeasibleSubsystemResultProto>
 MosekSolver::ComputeInfeasibleSubsystem(const SolveParametersProto&,
