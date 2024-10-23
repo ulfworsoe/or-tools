@@ -1446,7 +1446,9 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         case MSK_RES_TRM_MAX_ITERATIONS: lim = LimitProto::LIMIT_ITERATION; break;
         case MSK_RES_TRM_MAX_TIME: lim = LimitProto::LIMIT_TIME; break;
         case MSK_RES_TRM_NUM_MAX_NUM_INT_SOLUTIONS: lim = LimitProto::LIMIT_SOLUTION; break;
+#if MSK_VERSION_MAJOR >= 11
         case MSK_RES_TRM_SERVER_MAX_MEMORY: lim = LimitProto::LIMIT_MEMORY; break;
+#endif
         // LIMIT_CUTOFF
         case MSK_RES_TRM_OBJECTIVE_RANGE: lim = LimitProto::LIMIT_OBJECTIVE; break;
         case MSK_RES_TRM_NUMERICAL_PROBLEM: lim = LimitProto::LIMIT_NORM; break;
