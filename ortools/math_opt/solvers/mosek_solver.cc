@@ -68,7 +68,36 @@ constexpr SupportedProblemStructures kMosekSupportedStructures = {
 }  // namespace
 
 
+std::ostream & mosek::operator<<(std::ostream & s, SolSta solsta) {
+  switch (solsta) {
+    case SolSta::UNKNOWN: s << "UNKNOWN"; break;
+    case SolSta::OPTIMAL: s << "OPTIMAL"; break;
+    case SolSta::PRIM_FEAS: s << "PRIM_FEAS"; break;
+    case SolSta::DUAL_FEAS: s << "DUAL_FEAS"; break;
+    case SolSta::PRIM_AND_DUAL_FEAS: s << "PRIM_AND_DUAL_FEAS"; break;
+    case SolSta::PRIM_INFEAS_CER: s << "PRIM_INFEAS_CER"; break;
+    case SolSta::DUAL_INFEAS_CER: s << "DUAL_INFEAS_CER"; break;
+    case SolSta::PRIM_ILLPOSED_CER: s << "PRIM_ILLPOSED_CER"; break;
+    case SolSta::DUAL_ILLPOSED_CER: s << "DUAL_ILLPOSED_CER"; break;
+    case SolSta::INTEGER_OPTIMAL: s << "INTEGER_OPTIMAL"; break;
+  }
+  return s;
+}
 
+std::ostream & mosek::operator<<(std::ostream & s, ProSta prosta) {
+  switch (prosta) {
+    case ProSta::UNKNOWN: s << "UNKNOWN"; break;
+    case ProSta::PRIM_AND_DUAL_FEAS: s << "PRIM_AND_DUAL_FEAS"; break;
+    case ProSta::PRIM_FEAS: s << "PRIM_FEAS"; break;
+    case ProSta::DUAL_FEAS: s << "DUAL_FEAS"; break;
+    case ProSta::PRIM_INFEAS: s << "PRIM_INFEAS"; break;
+    case ProSta::DUAL_INFEAS: s << "DUAL_INFEAS"; break;
+    case ProSta::PRIM_AND_DUAL_INFEAS: s << "PRIM_AND_DUAL_INFEAS"; break;
+    case ProSta::ILL_POSED: s << "ILL_POSED"; break;
+    case ProSta::PRIM_INFEAS_OR_UNBOUNDED: s << "PRIM_INFEAS_OR_UNBOUNDED"; break;
+  }
+  return s;
+}
 
 absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
   std::cout << "MosekSolver::AddVariables()" << std::endl;
@@ -155,10 +184,13 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
   std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
   std::vector<double> valij; valij.reserve(nnz);
 
+  std::cout << "MosekSolver::AddConstraints(): var map : " << std::endl;
+  for (auto [k,v] : variable_map)
+    std::cout << "    " << k << " : " << v << std::endl;
   for (const auto id : adata.row_ids())
-    subj.push_back(variable_map[id]);
-  for (const auto id : adata.column_ids())
     subi.push_back(linconstr_map[id]);
+  for (const auto id : adata.column_ids())
+    subj.push_back(variable_map[id]);
   for (const auto c : adata.coefficients()) 
     valij.push_back(c);
   std::cout << "MosekSolver::AddConstraints(): #constraints: " << numcon << ", #nonzeros: " << nnz << std::endl;
@@ -411,19 +443,23 @@ absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(MSKsoltypee whic
   auto solsta = msk.GetSolSta(whichsol);
   PrimalSolutionProto sol;
   switch (solsta) {
-    case MSK_SOL_STA_OPTIMAL:         
-    case MSK_SOL_STA_INTEGER_OPTIMAL: 
-    case MSK_SOL_STA_PRIM_AND_DUAL_FEAS:
-    case MSK_SOL_STA_PRIM_FEAS:
+    case mosek::SolSta::OPTIMAL:         
+    case mosek::SolSta::INTEGER_OPTIMAL: 
+    case mosek::SolSta::PRIM_AND_DUAL_FEAS:
+    case mosek::SolSta::PRIM_FEAS:
       sol.set_feasibility_status(SolutionStatusProto::SOLUTION_STATUS_FEASIBLE); 
       {
         sol.set_objective_value(msk.GetPrimalObj(whichsol));
         std::vector<double> xx; msk.GetXX(whichsol,xx);
         SparseDoubleVectorProto vals;
-        for (auto &[k,v] : variable_map) 
+
+        std::vector<int64_t> keys; keys.reserve(variable_map.size());
+        for (auto [k,v] : variable_map) keys.push_back(k);
+        std::sort(keys.begin(),keys.end());
+        for (auto k : keys) 
         {
           vals.add_ids(k);
-          vals.add_values(xx[v]);
+          vals.add_values(xx[variable_map[k]]);
         }
 
         *sol.mutable_variable_values() = std::move(vals);
@@ -438,38 +474,50 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol
   auto solsta = msk.GetSolSta(whichsol);
   DualSolutionProto sol;
   switch (solsta) {
-    case MSK_SOL_STA_OPTIMAL: 
-    case MSK_SOL_STA_PRIM_AND_DUAL_FEAS:
-    case MSK_SOL_STA_DUAL_FEAS:
-      sol.set_objective_value(msk.GetPrimalObj(whichsol));
-      sol.set_feasibility_status(SolutionStatusProto::SOLUTION_STATUS_FEASIBLE); 
+    case mosek::SolSta::OPTIMAL: 
+    case mosek::SolSta::PRIM_AND_DUAL_FEAS:
+    case mosek::SolSta::DUAL_FEAS:
       {
-        std::vector<double> slx; msk.GetSLX(whichsol,slx);
-        std::vector<double> sux; msk.GetSUX(whichsol,sux);
-        SparseDoubleVectorProto vals;
-        for (auto &[k,v] : variable_map) 
+        sol.set_objective_value(msk.GetPrimalObj(whichsol));
+        sol.set_feasibility_status(SolutionStatusProto::SOLUTION_STATUS_FEASIBLE); 
+        std::vector<int64_t> keys; keys.reserve(std::max(variable_map.size(),linconstr_map.size()));
         {
-          vals.add_ids(k);
-          vals.add_values(slx[v]-sux[v]);
-        }
+          std::vector<double> slx; msk.GetSLX(whichsol,slx);
+          std::vector<double> sux; msk.GetSUX(whichsol,sux);
+          SparseDoubleVectorProto vals;
 
-        *sol.mutable_dual_values() = std::move(vals);
-      }
-      {
-        std::vector<double> y; msk.GetY(whichsol,y);
-        SparseDoubleVectorProto vals;
-        for (auto &[k,v] : linconstr_map) 
+          for (auto [k,v] : variable_map) keys.push_back(k);
+          std::sort(keys.begin(),keys.end());
+          for (auto k : keys) 
+          {
+            vals.add_ids(k);
+            auto v = variable_map[k];
+            vals.add_values(slx[v]-sux[v]);
+          }
+          std::cout << "  -- reduced cost: " << std::endl;
+          for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
+          *sol.mutable_reduced_costs() = std::move(vals);              
+        }
         {
-          vals.add_ids(k);
-          vals.add_values(y[v]);
-        }
+          std::vector<double> y; msk.GetY(whichsol,y);
+          SparseDoubleVectorProto vals;
+          keys.clear();
+          for (auto [k,v] : linconstr_map) keys.push_back(k);
+          std::sort(keys.begin(),keys.end());
+          for (auto k : keys) 
+          {
+            vals.add_ids(k);
+            vals.add_values(y[linconstr_map[k]]);
+          }
+          std::cout << "  -- dual values: " << std::endl;
+          for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
 
-        *sol.mutable_reduced_costs() = std::move(vals);
+          *sol.mutable_dual_values() = std::move(vals);
+        }
       }
       break;
     default:
       return absl::NotFoundError("Primal solution not available");
-      break;
   }
   return std::move(sol);
 }
@@ -486,12 +534,20 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
     if (r.ok())
       *sol.mutable_dual_solution() = std::move(*r);
   }
+
+  std::vector<int64_t> keys; keys.reserve(std::max(variable_map.size(),linconstr_map.size()));
   if (whichsol == MSK_SOL_BAS) {
+    std::cout << "MosekSolver::Solution(): Basis!" << std::endl;
     BasisProto bas;
     SparseBasisStatusVector csta;
     SparseBasisStatusVector xsta;
     std::vector<MSKstakeye> sk; msk.GetSKX(whichsol,sk);
-    for (auto & [k,v] : variable_map) {
+
+    for (auto [k,v] : variable_map) keys.push_back(k);
+    std::sort(keys.begin(),keys.end());
+
+    for (auto k : keys) {
+      auto v = variable_map[k];
       xsta.add_ids(k);
       switch (sk[v]) {
         case MSK_SK_LOW: xsta.add_values(BasisStatusProto::BASIS_STATUS_AT_LOWER_BOUND); break;
@@ -504,7 +560,11 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
       }
     }
     sk.clear(); msk.GetSKC(whichsol,sk);
-    for (auto & [k,v] : linconstr_map) {
+    keys.clear();
+    for (auto [k,v] : linconstr_map) keys.push_back(k);
+    std::sort(keys.begin(),keys.end());
+    for (auto k : keys) {
+      auto v = variable_map[k];
       csta.add_ids(k);
       switch (sk[v]) {
         case MSK_SK_LOW: csta.add_values(BasisStatusProto::BASIS_STATUS_AT_LOWER_BOUND); break;
@@ -519,6 +579,19 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
     *bas.mutable_variable_status() = std::move(xsta);
     *bas.mutable_constraint_status() = std::move(csta);
 
+    auto solsta = msk.GetSolSta(whichsol);
+    switch (solsta) {
+      case mosek::SolSta::OPTIMAL:         
+      case mosek::SolSta::INTEGER_OPTIMAL: 
+      case mosek::SolSta::PRIM_AND_DUAL_FEAS:
+      case mosek::SolSta::PRIM_FEAS:
+        bas.set_basic_dual_feasibility(SolutionStatusProto::SOLUTION_STATUS_FEASIBLE); 
+        break;
+      default:
+        bas.set_basic_dual_feasibility(SolutionStatusProto::SOLUTION_STATUS_UNSPECIFIED); 
+        break;
+    }
+
     *sol.mutable_basis() = std::move(bas);
   }
   return std::move(sol);
@@ -526,7 +599,7 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
 
 absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(MSKsoltypee whichsol) {
   auto solsta = msk.GetSolSta(whichsol);
-  if (solsta == MSK_SOL_STA_DUAL_INFEAS_CER)
+  if (solsta == mosek::SolSta::DUAL_INFEAS_CER)
     return absl::NotFoundError("Certificate not available");
 
   std::vector<double> xx; msk.GetXX(whichsol,xx);
@@ -543,7 +616,7 @@ absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(MSKsoltypee whichsol) {
 absl::StatusOr<DualRayProto>   MosekSolver::DualRay(MSKsoltypee whichsol) {
   auto solsta = msk.GetSolSta(whichsol);
 
-  if (solsta == MSK_SOL_STA_PRIM_INFEAS_CER)
+  if (solsta == mosek::SolSta::PRIM_INFEAS_CER)
     return absl::NotFoundError("Certificate not available");
 
   std::vector<double> slx; msk.GetSLX(whichsol,slx);
@@ -706,8 +779,8 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   else { soldef = false; }
 
   TerminationProto trmp;
-  MSKprostae prosta{};
-  MSKsolstae solsta{};
+  mosek::ProSta prosta{};
+  mosek::SolSta solsta{};
   if (! soldef) {
     auto [msg,name,code] = msk.LastError();
     trmp = TerminateForReason(msk.IsMaximize(), TerminationReasonProto::TERMINATION_REASON_NO_SOLUTION_FOUND, msg);
@@ -720,19 +793,19 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     // Attempt to determine TerminationProto from Mosek Termination code,
     // problem status and solution status.
 
-    if      (solsta == MSK_SOL_STA_OPTIMAL ||
-             solsta == MSK_SOL_STA_INTEGER_OPTIMAL) {
+    if      (solsta == mosek::SolSta::OPTIMAL ||
+             solsta == mosek::SolSta::INTEGER_OPTIMAL) {
       std::cout << "MosekSolver::Solve() trmp = Optimal! " << std::endl;
       trmp = OptimalTerminationProto(msk.GetPrimalObj(whichsol),msk.GetDualObj(whichsol),"");
     }
-    else if (solsta == MSK_SOL_STA_PRIM_INFEAS_CER) 
+    else if (solsta == mosek::SolSta::PRIM_INFEAS_CER) 
       trmp = InfeasibleTerminationProto(msk.IsMaximize(), FeasibilityStatusProto::FEASIBILITY_STATUS_FEASIBLE);
-    else if (prosta == MSK_PRO_STA_PRIM_INFEAS_OR_UNBOUNDED)
+    else if (prosta == mosek::ProSta::PRIM_INFEAS_OR_UNBOUNDED)
       trmp = InfeasibleOrUnboundedTerminationProto(msk.IsMaximize());
-    else if (solsta == MSK_SOL_STA_DUAL_INFEAS_CER)
+    else if (solsta == mosek::SolSta::DUAL_INFEAS_CER)
       trmp = UnboundedTerminationProto(msk.IsMaximize());
-    else if (solsta == MSK_SOL_STA_PRIM_AND_DUAL_FEAS ||
-             solsta == MSK_SOL_STA_PRIM_FEAS) {
+    else if (solsta == mosek::SolSta::PRIM_AND_DUAL_FEAS ||
+             solsta == mosek::SolSta::PRIM_FEAS) {
       LimitProto lim = LimitProto::LIMIT_UNSPECIFIED;
       switch (trm) {
         case MSK_RES_TRM_MAX_ITERATIONS: lim = LimitProto::LIMIT_ITERATION; break;
@@ -748,7 +821,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         case MSK_RES_TRM_STALL: lim = LimitProto::LIMIT_SLOW_PROGRESS; break;
         default: lim = LimitProto::LIMIT_OTHER; break;
       }
-      if      (solsta == MSK_SOL_STA_PRIM_AND_DUAL_FEAS)
+      if      (solsta == mosek::SolSta::PRIM_AND_DUAL_FEAS)
         trmp = FeasibleTerminationProto(msk.IsMaximize(),lim,msk.GetPrimalObj(whichsol),msk.GetDualObj(whichsol));
       else 
         trmp = FeasibleTerminationProto(msk.IsMaximize(),lim,msk.GetPrimalObj(whichsol),std::nullopt);
@@ -764,11 +837,11 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   if (soldef) {
     std::cout << "MosekSolver::Solve() whichsol = " << whichsol << ", solsta =  " << solsta << std::endl;
     switch (solsta) { 
-      case MSK_SOL_STA_OPTIMAL:
-      case MSK_SOL_STA_INTEGER_OPTIMAL:
-      case MSK_SOL_STA_PRIM_FEAS:
-      case MSK_SOL_STA_DUAL_FEAS:
-      case MSK_SOL_STA_PRIM_AND_DUAL_FEAS:
+      case mosek::SolSta::OPTIMAL:
+      case mosek::SolSta::INTEGER_OPTIMAL:
+      case mosek::SolSta::PRIM_FEAS:
+      case mosek::SolSta::DUAL_FEAS:
+      case mosek::SolSta::PRIM_AND_DUAL_FEAS:
         {
           auto r = Solution(whichsol);
           std::cout << "MosekSolver::Solve() solution ok ? " << r.ok() << std::endl;
@@ -777,7 +850,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
           }
         }
         break;
-      case MSK_SOL_STA_DUAL_INFEAS_CER:
+      case mosek::SolSta::DUAL_INFEAS_CER:
         {
           auto r = PrimalRay(whichsol);
           if (r.ok()) {
@@ -785,7 +858,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
           }
         }
         break;
-      case MSK_SOL_STA_PRIM_INFEAS_CER:
+      case mosek::SolSta::PRIM_INFEAS_CER:
         {
           auto r = DualRay(whichsol);
           if (r.ok()) {
@@ -793,9 +866,9 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
           }
         }
         break;
-      case MSK_SOL_STA_PRIM_ILLPOSED_CER:
-      case MSK_SOL_STA_DUAL_ILLPOSED_CER:
-      case MSK_SOL_STA_UNKNOWN:
+      case mosek::SolSta::PRIM_ILLPOSED_CER:
+      case mosek::SolSta::DUAL_ILLPOSED_CER:
+      case mosek::SolSta::UNKNOWN:
         break;
     }
   }

@@ -10,12 +10,41 @@
 
 namespace operations_research::math_opt {
 
+namespace mosek {
+  enum class SolSta : int {
+    UNKNOWN            = MSK_SOL_STA_UNKNOWN,
+    OPTIMAL            = MSK_SOL_STA_OPTIMAL,
+    PRIM_FEAS          = MSK_SOL_STA_PRIM_FEAS,
+    DUAL_FEAS          = MSK_SOL_STA_DUAL_FEAS,
+    PRIM_AND_DUAL_FEAS = MSK_SOL_STA_PRIM_AND_DUAL_FEAS,
+    PRIM_INFEAS_CER    = MSK_SOL_STA_PRIM_INFEAS_CER,
+    DUAL_INFEAS_CER    = MSK_SOL_STA_DUAL_INFEAS_CER,
+    PRIM_ILLPOSED_CER  = MSK_SOL_STA_PRIM_ILLPOSED_CER,
+    DUAL_ILLPOSED_CER  = MSK_SOL_STA_DUAL_ILLPOSED_CER,
+    INTEGER_OPTIMAL    = MSK_SOL_STA_INTEGER_OPTIMAL   
+  };
+  enum class ProSta : int {
+    UNKNOWN                  = MSK_PRO_STA_UNKNOWN,
+    PRIM_AND_DUAL_FEAS       = MSK_PRO_STA_PRIM_AND_DUAL_FEAS,
+    PRIM_FEAS                = MSK_PRO_STA_PRIM_FEAS,
+    DUAL_FEAS                = MSK_PRO_STA_DUAL_FEAS,
+    PRIM_INFEAS              = MSK_PRO_STA_PRIM_INFEAS,
+    DUAL_INFEAS              = MSK_PRO_STA_DUAL_INFEAS,
+    PRIM_AND_DUAL_INFEAS     = MSK_PRO_STA_PRIM_AND_DUAL_INFEAS,
+    ILL_POSED                = MSK_PRO_STA_ILL_POSED,
+    PRIM_INFEAS_OR_UNBOUNDED = MSK_PRO_STA_PRIM_INFEAS_OR_UNBOUNDED
+  };
+
+  std::ostream & operator<<(std::ostream & s, SolSta solsta);
+  std::ostream & operator<<(std::ostream & s, ProSta prosta);
+}
 class Mosek {
   public:
     enum class ConeType {
       SecondOrderCone,
       RotatedSecondOrderCone
     };
+
 
     typedef int32_t VariableIndex              ;
     typedef int32_t ConstraintIndex            ;
@@ -93,8 +122,8 @@ class Mosek {
     int GetParam(MSKiparame ipar) const;
 
     bool       SolutionDef(MSKsoltypee which) const { MSKbooleant soldef; MSK_solutiondef(task.get(),which,&soldef); return soldef != 0; }
-    MSKprostae GetProSta(MSKsoltypee which) const { MSKprostae prosta; MSK_getprosta(task.get(),which,&prosta); return prosta; }
-    MSKsolstae GetSolSta(MSKsoltypee which) const { MSKsolstae solsta; MSK_getsolsta(task.get(),which,&solsta); return solsta; }
+    mosek::ProSta GetProSta(MSKsoltypee which) const { MSKprostae prosta; MSK_getprosta(task.get(),which,&prosta); return (mosek::ProSta)prosta; }
+    mosek::SolSta GetSolSta(MSKsoltypee which) const { MSKsolstae solsta; MSK_getsolsta(task.get(),which,&solsta); return (mosek::SolSta)solsta; }
 
     std::tuple<std::string,std::string,MSKrescodee> LastError() const;
 
