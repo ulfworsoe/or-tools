@@ -1,4 +1,4 @@
-// Copyright 2010-2024 Google LLC
+// Copyright 2010-2024 Google LLskip_xx_zeros C
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <ios>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -442,7 +443,7 @@ MosekSolver::MosekSolver(Mosek && msk) : msk(std::move(msk)) {}
 
 
 
-absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(MSKsoltypee whichsol) {
+absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_var_ids, bool skip_zero_values) {
   auto solsta = msk.GetSolSta(whichsol);
   PrimalSolutionProto sol;
   switch (solsta) {
@@ -456,13 +457,13 @@ absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(MSKsoltypee whic
         std::vector<double> xx; msk.GetXX(whichsol,xx);
         SparseDoubleVectorProto vals;
 
-        std::vector<int64_t> keys; keys.reserve(variable_map.size());
-        for (auto [k,v] : variable_map) keys.push_back(k);
-        std::sort(keys.begin(),keys.end());
-        for (auto k : keys) 
-        {
-          vals.add_ids(k);
-          vals.add_values(xx[variable_map[k]]);
+        for (auto k : ordered_var_ids) 
+        {       
+          auto v = xx[variable_map[k]];
+          if (!skip_zero_values || v < 0 || v > 0) {
+            vals.add_ids(k);
+            vals.add_values(v);
+          }
         }
 
         *sol.mutable_variable_values() = std::move(vals);
@@ -473,7 +474,7 @@ absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(MSKsoltypee whic
   }
   return std::move(sol);
 }
-absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol) {
+absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids,bool skip_yx_zeros) {
   auto solsta = msk.GetSolSta(whichsol);
   DualSolutionProto sol;
   switch (solsta) {
@@ -489,31 +490,28 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol
           std::vector<double> sux; msk.GetSUX(whichsol,sux);
           SparseDoubleVectorProto vals;
 
-          for (auto [k,v] : variable_map) keys.push_back(k);
-          std::sort(keys.begin(),keys.end());
-          for (auto k : keys) 
+          for (auto k : ordered_yx_ids) 
           {
-            vals.add_ids(k);
-            auto v = variable_map[k];
-            vals.add_values(slx[v]-sux[v]);
+            auto j = variable_map[k];
+            auto v = slx[j]-sux[j];
+            if (! skip_yx_zeros || v < 0.0 || v > 0.0) {
+              vals.add_ids(k);
+              vals.add_values(v);
+            }
           }
-          //std::cout << "  -- reduced cost: " << std::endl;
-          //for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
           *sol.mutable_reduced_costs() = std::move(vals);              
         }
         {
           std::vector<double> y; msk.GetY(whichsol,y);
           SparseDoubleVectorProto vals;
-          keys.clear();
-          for (auto [k,v] : linconstr_map) keys.push_back(k);
-          std::sort(keys.begin(),keys.end());
-          for (auto k : keys) 
+          for (auto k : ordered_y_ids) 
           {
-            vals.add_ids(k);
-            vals.add_values(y[linconstr_map[k]]);
+            auto v = y[linconstr_map[k]];
+            if (! skip_y_zeros || v < 0 || v > 0) {
+              vals.add_ids(k);
+              vals.add_values(v);
+            }
           }
-          //std::cout << "  -- dual values: " << std::endl;
-          //for (auto id : vals.ids()) std::cout << "        " << id << std::endl;
 
           *sol.mutable_dual_values() = std::move(vals);
         }
@@ -524,21 +522,26 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(MSKsoltypee whichsol
   }
   return std::move(sol);
 }
-absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
+absl::StatusOr<SolutionProto> MosekSolver::Solution(
+    MSKsoltypee whichsol,
+    const std::vector<int64_t>& ordered_xc_ids, 
+    const std::vector<int64_t>& ordered_xx_ids, bool skip_xx_zeros,
+    const std::vector<int64_t>& ordered_y_ids,
+    bool skip_y_zeros, const std::vector<int64_t>& ordered_yx_ids,
+    bool skip_yx_zeros) {
   //std::cout << "MosekSolver::Solution()" << std::endl;
   SolutionProto sol;
   {
-    auto r = PrimalSolution(whichsol);
+    auto r = PrimalSolution(whichsol,ordered_xx_ids,skip_xx_zeros);
     if (r.ok())
       *sol.mutable_primal_solution() = std::move(*r);
   }
   {
-    auto r = DualSolution(whichsol);
+    auto r = DualSolution(whichsol,ordered_y_ids,skip_y_zeros, ordered_yx_ids, skip_yx_zeros);
     if (r.ok())
       *sol.mutable_dual_solution() = std::move(*r);
   }
 
-  std::vector<int64_t> keys; keys.reserve(std::max(variable_map.size(),linconstr_map.size()));
   if (whichsol == MSK_SOL_BAS) {
     //std::cout << "MosekSolver::Solution(): Basis!" << std::endl;
     BasisProto bas;
@@ -546,10 +549,7 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
     SparseBasisStatusVector xsta;
     std::vector<MSKstakeye> sk; msk.GetSKX(whichsol,sk);
 
-    for (auto [k,v] : variable_map) keys.push_back(k);
-    std::sort(keys.begin(),keys.end());
-
-    for (auto k : keys) {
+    for (auto k : ordered_xx_ids) {
       auto v = variable_map[k];
       xsta.add_ids(k);
       switch (sk[v]) {
@@ -563,11 +563,8 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
       }
     }
     sk.clear(); msk.GetSKC(whichsol,sk);
-    keys.clear();
-    for (auto [k,v] : linconstr_map) keys.push_back(k);
-    std::sort(keys.begin(),keys.end());
-    for (auto k : keys) {
-      auto v = variable_map[k];
+    for (auto k : ordered_xc_ids) {
+      auto v = linconstr_map[k];
       csta.add_ids(k);
       switch (sk[v]) {
         case MSK_SK_LOW: csta.add_values(BasisStatusProto::BASIS_STATUS_AT_LOWER_BOUND); break;
@@ -600,7 +597,7 @@ absl::StatusOr<SolutionProto>  MosekSolver::Solution(MSKsoltypee whichsol) {
   return std::move(sol);
 }
 
-absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(MSKsoltypee whichsol) {
+absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xx_ids, bool skip_xx_zeros) {
   auto solsta = msk.GetSolSta(whichsol);
   if (solsta == mosek::SolSta::DUAL_INFEAS_CER)
     return absl::NotFoundError("Certificate not available");
@@ -608,15 +605,20 @@ absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(MSKsoltypee whichsol) {
   std::vector<double> xx; msk.GetXX(whichsol,xx);
   PrimalRayProto ray;
   SparseDoubleVectorProto data;
-  for (auto &[k,v] : variable_map) {
-    data.add_ids(k);
-    data.add_values(xx[v]);
+  for (auto k : ordered_xx_ids) {
+    auto v = xx[variable_map[k]];
+    if (! skip_xx_zeros || v < 0 || v > 0) {
+      data.add_ids(k);
+      data.add_values(v);
+    }
   }
   *ray.mutable_variable_values() = data;
   return ray;
 }
 
-absl::StatusOr<DualRayProto>   MosekSolver::DualRay(MSKsoltypee whichsol) {
+absl::StatusOr<DualRayProto> MosekSolver::DualRay(
+    MSKsoltypee whichsol, const std::vector<int64_t>& ordered_y_ids, bool skip_y_zeros,
+    const std::vector<int64_t>& ordered_yx_ids, bool skip_yx_zeros) {
   auto solsta = msk.GetSolSta(whichsol);
 
   if (solsta == mosek::SolSta::PRIM_INFEAS_CER)
@@ -628,13 +630,20 @@ absl::StatusOr<DualRayProto>   MosekSolver::DualRay(MSKsoltypee whichsol) {
   DualRayProto ray;
   SparseDoubleVectorProto xdata;
   SparseDoubleVectorProto cdata;
-  for (auto &[k,v] : variable_map) {
-    xdata.add_ids(k);
-    xdata.add_values(slx[v] - sux[v]);
+  for (auto k : ordered_yx_ids) {
+    auto j = variable_map[k];
+    auto v = slx[j] - sux[j];
+    if (! skip_yx_zeros || v < 0 || v > 0) {
+      xdata.add_ids(k);
+      xdata.add_values(v);
+    }
   }
-  for (auto &[k,v] : linconstr_map) {
-    cdata.add_ids(k);
-    cdata.add_values(y[v]);
+  for (auto &k : ordered_y_ids) {
+    auto v = y[linconstr_map[k]];
+    if (! skip_y_zeros || v < 0 || v > 0) {
+      cdata.add_ids(k);
+      cdata.add_values(v);
+    }
   }
   *ray.mutable_dual_values() = xdata;
   *ray.mutable_reduced_costs() = cdata;
@@ -762,6 +771,59 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
 
   // TODO: parameter enable_output
  
+  bool skip_xx_zeros = model_parameters.variable_values_filter().skip_zero_values();
+  bool skip_y_zeros  = model_parameters.dual_values_filter().skip_zero_values();
+  bool skip_yx_zeros = model_parameters.reduced_costs_filter().skip_zero_values();
+  bool filter_ids   = model_parameters.variable_values_filter().filter_by_ids();
+
+  std::vector<int64_t> ordered_xc_ids;
+  std::vector<int64_t> ordered_xx_ids;
+  std::vector<int64_t> ordered_y_ids;
+  std::vector<int64_t> ordered_yx_ids;
+
+  ordered_xc_ids.reserve(linconstr_map.size());
+  for (auto [id,idx] : linconstr_map)
+    ordered_xc_ids.push_back(id);
+  std::sort(ordered_xc_ids.begin(),ordered_xc_ids.end());
+
+  if (! skip_xx_zeros) {
+    ordered_xx_ids.reserve(variable_map.size());
+    for (auto [id,idx]: variable_map) {
+      ordered_xx_ids.push_back(id);
+    }
+    std::sort(ordered_xx_ids.begin(),ordered_xx_ids.end());
+  }
+  else {
+    ordered_xx_ids.reserve(model_parameters.variable_values_filter().filtered_ids().size());
+    for (auto id : model_parameters.variable_values_filter().filtered_ids()) {
+      if (variable_map.contains(id))
+        ordered_xx_ids.push_back(id);
+    }
+  }
+
+  if (!model_parameters.dual_values_filter().filter_by_ids()) {
+    ordered_y_ids.reserve(linconstr_map.size());
+    for (auto [id,idx] : linconstr_map)
+      ordered_y_ids.push_back(id);
+    std::sort(ordered_y_ids.begin(),ordered_y_ids.end());
+  }
+  else {
+    ordered_y_ids.reserve(model_parameters.dual_values_filter().filtered_ids().size());
+    for (auto id : model_parameters.dual_values_filter().filtered_ids())
+      ordered_y_ids.push_back(id);
+  }
+  
+  if (!model_parameters.reduced_costs_filter().filter_by_ids()) {
+    ordered_yx_ids.reserve(linconstr_map.size());
+    for (auto [id,idx] : variable_map)
+      ordered_yx_ids.push_back(id);
+    std::sort(ordered_yx_ids.begin(),ordered_yx_ids.end());
+  }
+  else {
+    ordered_yx_ids.reserve(model_parameters.reduced_costs_filter().filtered_ids().size());
+    for (auto id : model_parameters.reduced_costs_filter().filtered_ids())
+      ordered_yx_ids.push_back(id);
+  }
 
   MSKrescodee trm;
   {
@@ -776,7 +838,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
             case MSK_CALLBACK_IM_SIMPLEX:
               cbdata.mutable_simplex_stats()->set_iteration_count(liinf[MSK_LIINF_SIMPLEX_ITER]);
               cbdata.mutable_simplex_stats()->set_objective_value(dinf[MSK_DINF_SIM_OBJ]);
-              //cbdata.mutable_simplex_stats()->set_primal_infeasibility(...);
+              //cbdata.mutable_simplex_stats(/->set_primal_infeasibility(...);
               //cbdata.mutable_simplex_stats()->set_dual_infeasibility(...);
               //cbdata.mutable_simplex_stats()->is_perturbed(...);
               cbdata.set_event(CALLBACK_EVENT_SIMPLEX);
@@ -796,18 +858,14 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
               {
                 std::vector<double> xx;
                 msk.GetXX(MSK_SOL_ITG, xx);
-                bool filter_zeros = model_parameters.variable_values_filter().skip_zero_values();
-                bool filter_ids   = model_parameters.variable_values_filter().filter_by_ids();
 
                 SparseDoubleVectorProto primal;
 
-                for (auto id : model_parameters.variable_values_filter().filtered_ids()) {
-                  if (variable_map.contains(id)) {
-                    auto v = xx[variable_map[id]];
-                    if (! filter_zeros || v > 0.0 || v < 0.0) {
-                      primal.add_ids(id);
-                      primal.add_values(v);
-                    }
+                for (auto id : ordered_xx_ids) {
+                  auto v = xx[variable_map[id]];
+                  if (! skip_xx_zeros || v > 0.0 || v < 0.0) {
+                    primal.add_ids(id);
+                    primal.add_values(v);
                   }
                 }
                 *cbdata.mutable_primal_solution_vector() = primal;
@@ -917,8 +975,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
       case mosek::SolSta::DUAL_FEAS:
       case mosek::SolSta::PRIM_AND_DUAL_FEAS:
         {
-          auto r = Solution(whichsol);
-          //std::cout << "MosekSolver::Solve() solution ok ? " << r.ok() << std::endl;
+          auto r = Solution(whichsol,ordered_xc_ids, ordered_xx_ids,skip_xx_zeros, ordered_y_ids,skip_y_zeros,ordered_yx_ids,skip_yx_zeros);
           if (r.ok()) {
             *result.add_solutions() = std::move(*r);
           }
@@ -926,7 +983,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         break;
       case mosek::SolSta::DUAL_INFEAS_CER:
         {
-          auto r = PrimalRay(whichsol);
+          auto r = PrimalRay(whichsol,ordered_xx_ids,skip_xx_zeros);
           if (r.ok()) {
             *result.add_primal_rays() = std::move(*r);
           }
@@ -934,7 +991,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         break;
       case mosek::SolSta::PRIM_INFEAS_CER:
         {
-          auto r = DualRay(whichsol);
+          auto r = DualRay(whichsol,ordered_y_ids,skip_y_zeros,ordered_yx_ids,skip_yx_zeros);
           if (r.ok()) {
             *result.add_dual_rays() = std::move(*r);
           }
@@ -956,7 +1013,7 @@ MosekSolver::ComputeInfeasibleSubsystem(const SolveParametersProto&,
                                         MessageCallback,
                                         const SolveInterrupter*) {
   return absl::UnimplementedError(
-      "HiGHS does not provide a method to compute an infeasible subsystem");
+      "MOSEK does not yet support computing an infeasible subsystem");
 }
 
 MATH_OPT_REGISTER_SOLVER(SOLVER_TYPE_MOSEK, MosekSolver::New);

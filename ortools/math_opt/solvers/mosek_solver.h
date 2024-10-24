@@ -76,11 +76,11 @@ class MosekSolver : public SolverInterface {
   absl::Status UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds);
 
 
-  absl::StatusOr<PrimalSolutionProto> PrimalSolution(MSKsoltypee whichsol);
-  absl::StatusOr<DualSolutionProto>   DualSolution(MSKsoltypee whichsol);
-  absl::StatusOr<SolutionProto>       Solution(MSKsoltypee whichsol);
-  absl::StatusOr<PrimalRayProto>      PrimalRay(MSKsoltypee whichsol);
-  absl::StatusOr<DualRayProto>        DualRay(MSKsoltypee whichsol);
+  absl::StatusOr<PrimalSolutionProto> PrimalSolution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xx_ids, bool skip_zeros);
+  absl::StatusOr<DualSolutionProto>   DualSolution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids, bool skip_yx_zeros);
+  absl::StatusOr<SolutionProto>       Solution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xc_ids, const std::vector<int64_t> & ordered_xx_ids, bool skip_xx_zeros, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids, bool skip_yx_zeros);
+  absl::StatusOr<PrimalRayProto>      PrimalRay(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xx_ids, bool skip_zeros);
+  absl::StatusOr<DualRayProto>        DualRay(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids, bool skip_yx_zeros);
 
   MosekSolver(Mosek && msk);
   MosekSolver(MosekSolver &) = delete;
