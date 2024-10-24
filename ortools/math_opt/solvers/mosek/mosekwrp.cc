@@ -2,7 +2,9 @@
 #include <cmath>
 #include <limits>
 #include <locale>
+#include <ranges>
 #include <type_traits>
+#include "absl/cleanup/cleanup.h"
 #include "absl/status/status.h"
 #include "mosekwrp.h"
 
@@ -348,6 +350,48 @@ namespace operations_research::math_opt {
     
   absl::StatusOr<MSKrescodee> Mosek::Optimize() {
     MSKrescodee trm;
+    MSKrescodee r = MSK_optimizetrm(task.get(), &trm);
+    if (MSK_RES_OK != r)
+      return absl::InternalError("Optimization failed");
+
+    return trm;
+  }
+
+  void Mosek::message_callback(MSKuserhandle_t handle, const char * msg) {
+    MessageCallback & msg_cb = *reinterpret_cast<MessageCallback*>(handle);
+    if (msg_cb) 
+      (msg_cb)(msg);
+  }
+  int Mosek::info_callback(MSKtask_t task, MSKuserhandle_t h, MSKcallbackcodee code, const double * dinf, const int * iinf, const int64_t * liinf) {
+    auto &info_cb = *reinterpret_cast<InfoCallback*>(h);
+
+    bool interrupt = false;
+    if (info_cb)
+      interrupt = info_cb(code,
+          absl::Span(dinf,MSK_DINF_END),
+          absl::Span(iinf,MSK_IINF_END),
+          absl::Span(liinf,MSK_LIINF_END));
+    return interrupt ? 1 : 0;
+  }
+
+  absl::StatusOr<MSKrescodee> Mosek::Optimize(
+    MessageCallback  msg_cb,
+    InfoCallback     info_cb)
+  {
+    MSKrescodee trm;
+
+    auto _cleanup = absl::MakeCleanup([&]() {
+        MSK_linkfunctotaskstream(task.get(),MSK_STREAM_LOG,nullptr,nullptr);
+        MSK_putcallbackfunc(task.get(),nullptr,nullptr);
+        });
+   
+    bool interrupt = false;
+
+    if (info_cb)
+      MSK_putcallbackfunc(task.get(),info_callback,&info_cb);
+    if (msg_cb)
+      MSK_linkfunctotaskstream(task.get(),MSK_STREAM_LOG,&msg_cb,message_callback);
+
     MSKrescodee r = MSK_optimizetrm(task.get(), &trm);
     if (MSK_RES_OK != r)
       return absl::InternalError("Optimization failed");

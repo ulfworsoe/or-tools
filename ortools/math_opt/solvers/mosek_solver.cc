@@ -25,6 +25,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <span>
 
 //#include "absl/algorithm/container.h"
 //#include "absl/cleanup/cleanup.h"
@@ -37,9 +38,11 @@
 #include "absl/strings/string_view.h"
 //#include "absl/time/clock.h"
 //#include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "ortools/base/protoutil.h"
 #include "ortools/base/status_builder.h"
 #include "ortools/base/status_macros.h"
+#include "ortools/math_opt/callback.pb.h"
 #include "ortools/math_opt/core/empty_bounds.h"
 #include "ortools/math_opt/core/inverted_bounds.h"
 #include "ortools/math_opt/core/math_opt_proto_utils.h"
@@ -638,14 +641,13 @@ absl::StatusOr<DualRayProto>   MosekSolver::DualRay(MSKsoltypee whichsol) {
   return ray;
 }
 
-
 absl::StatusOr<SolveResultProto> MosekSolver::Solve(
-    const SolveParametersProto& parameters,
+    const SolveParametersProto& parameters, // solver settings
     const ModelSolveParametersProto& model_parameters,
     MessageCallback message_cb, 
-    const CallbackRegistrationProto&, 
-    Callback cb,
-    const SolveInterrupter* const) {
+    const CallbackRegistrationProto& callback_registration, 
+    Callback cb, // using Callback = std::function<CallbackResultProto(const CallbackDataProto&)>, from base_solver.h
+    const SolveInterrupter* const solve_interrupter) {
    
   // Solve parameters that we support:
   // - google.protobuf.Duration time_limit
@@ -669,8 +671,6 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   // - EmphasisProto heuristics
   // - EmphasisProto scaling
 
-  //std::cout << "MosekSolver::Solve()" << std::endl;
-  
   double dpar_optimizer_max_time = msk.GetParam(MSK_DPAR_OPTIMIZER_MAX_TIME);
   int ipar_intpnt_max_iterations = msk.GetParam(MSK_IPAR_INTPNT_MAX_ITERATIONS);
   int ipar_sim_max_iterations = msk.GetParam(MSK_IPAR_SIM_MAX_ITERATIONS);
@@ -681,7 +681,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   double dpar_mio_tol_rel_gap = msk.GetParam(MSK_DPAR_MIO_TOL_REL_GAP);
   double dpar_intpnt_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_TOL_REL_GAP);
   double dpar_intpnt_co_tol_rel_gap = msk.GetParam(MSK_DPAR_INTPNT_CO_TOL_REL_GAP);
-  int ipar_optimizer = msk.GetParam(MSK_IPAR_OPTIMIZER);
+  int ipar_optimizer = msk.GetParam(MSK_IPAR_OPTIMIZER);  
 
   auto _guard_reset_params = absl::MakeCleanup([&](){
       msk.PutParam(MSK_DPAR_OPTIMIZER_MAX_TIME,dpar_optimizer_max_time);
@@ -761,11 +761,85 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   }
 
   // TODO: parameter enable_output
-  
+ 
+
   MSKrescodee trm;
   {
-    auto r = msk.Optimize();
-    msk.WriteData("__test.ptf");
+    BufferedMessageCallback bmsg_cb(message_cb);
+    // TODO: Use model_parameters
+    auto r = msk.Optimize(
+        [&](const std::string & msg) { bmsg_cb.OnMessage(msg); }, 
+        [&](MSKcallbackcodee code, absl::Span<const double> dinf, absl::Span<const int> iinf, absl::Span<const int64_t> liinf) {
+          if (cb) {
+            CallbackDataProto cbdata;
+            switch (code) {
+            case MSK_CALLBACK_IM_SIMPLEX:
+              cbdata.mutable_simplex_stats()->set_iteration_count(liinf[MSK_LIINF_SIMPLEX_ITER]);
+              cbdata.mutable_simplex_stats()->set_objective_value(dinf[MSK_DINF_SIM_OBJ]);
+              //cbdata.mutable_simplex_stats()->set_primal_infeasibility(...);
+              //cbdata.mutable_simplex_stats()->set_dual_infeasibility(...);
+              //cbdata.mutable_simplex_stats()->is_perturbed(...);
+              cbdata.set_event(CALLBACK_EVENT_SIMPLEX);
+              break;
+            case MSK_CALLBACK_IM_MIO:
+              cbdata.mutable_mip_stats()->set_primal_bound(dinf[MSK_DINF_MIO_OBJ_BOUND]);
+              //cbdata.mutable_mip_stats()->set_dual_bound(...);
+              cbdata.mutable_mip_stats()->set_explored_nodes(iinf[MSK_IINF_MIO_NUM_SOLVED_NODES]);
+              //cbdata.mutable_mip_stats()->set_open_nodes(...);
+              cbdata.mutable_mip_stats()->set_simplex_iterations(liinf[MSK_LIINF_MIO_SIMPLEX_ITER]);
+              //cbdata.mutable_mip_stats()->set_number_of_solutions_found(...);
+              //cbdata.mutable_mip_stats()->set_cutting_planes_in_lp(...);
+              cbdata.set_event(CALLBACK_EVENT_MIP);              
+              break;
+            case MSK_CALLBACK_NEW_INT_MIO:
+              cbdata.set_event(CALLBACK_EVENT_MIP_SOLUTION);
+              {
+                std::vector<double> xx;
+                msk.GetXX(MSK_SOL_ITG, xx);
+                bool filter_zeros = model_parameters.variable_values_filter().skip_zero_values();
+                bool filter_ids   = model_parameters.variable_values_filter().filter_by_ids();
+
+                SparseDoubleVectorProto primal;
+
+                for (auto id : model_parameters.variable_values_filter().filtered_ids()) {
+                  if (variable_map.contains(id)) {
+                    auto v = xx[variable_map[id]];
+                    if (! filter_zeros || v > 0.0 || v < 0.0) {
+                      primal.add_ids(id);
+                      primal.add_values(v);
+                    }
+                  }
+                }
+                *cbdata.mutable_primal_solution_vector() = primal;
+              }
+              break;
+            case MSK_CALLBACK_IM_PRESOLVE:
+              cbdata.set_event(CALLBACK_EVENT_PRESOLVE);
+              break;
+            case MSK_CALLBACK_IM_CONIC:
+            case MSK_CALLBACK_IM_INTPNT:
+              cbdata.mutable_barrier_stats()->set_iteration_count(liinf[MSK_IINF_INTPNT_ITER]);
+              cbdata.mutable_barrier_stats()->set_primal_objective(dinf[MSK_DINF_INTPNT_PRIMAL_OBJ]);
+              cbdata.mutable_barrier_stats()->set_dual_objective(dinf[MSK_DINF_INTPNT_DUAL_OBJ]);
+              //cbdata.mutable_barrier_stats()->set_complementarity(...);
+              //cbdata.mutable_barrier_stats()->set_primal_infeasibility(...);
+              //cbdata.mutable_barrier_stats()->set_dual_infeasibility(...);
+
+              cbdata.set_event(CALLBACK_EVENT_BARRIER);
+              break;
+            default:
+              cbdata.set_event(CALLBACK_EVENT_UNSPECIFIED);
+              break;
+            }
+
+            auto r = cb(cbdata);
+            if (r.ok()) {
+              return r->terminate();
+            }
+          }
+          return false;
+        });
+    //msk.WriteData("__test.ptf");
     //std::cout << "MosekSolver::Solve() optimize -> " << r << std::endl;
     if (! r.ok()) return r.status();
     trm = *r;
@@ -835,7 +909,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
   *result.mutable_termination() = trmp;
 
   if (soldef) {
-    //std::cout << "MosekSolver::Solve() whichsol = " << whichsol << ", solsta =  " << solsta << std::endl;
+    // TODO: Use model_parameters
     switch (solsta) { 
       case mosek::SolSta::OPTIMAL:
       case mosek::SolSta::INTEGER_OPTIMAL:

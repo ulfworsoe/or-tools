@@ -6,6 +6,7 @@
 #include <vector>
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
 #include "mosek.h"
 
 namespace operations_research::math_opt {
@@ -45,6 +46,8 @@ class Mosek {
       RotatedSecondOrderCone
     };
 
+    using MessageCallback  = std::function<void(const std::string&)>;
+    using InfoCallback     = std::function<bool(MSKcallbackcodee,absl::Span<const double>, absl::Span<const int>, absl::Span<const int64_t>)>;
 
     typedef int32_t VariableIndex              ;
     typedef int32_t ConstraintIndex            ;
@@ -109,6 +112,10 @@ class Mosek {
     // Solve
     absl::StatusOr<MSKrescodee> Optimize();
 
+    absl::StatusOr<MSKrescodee> Optimize(
+      MessageCallback  msg_cb,
+      InfoCallback     info_cb);
+
     // Parameters
 
     void PutParam(MSKiparame par, int value);
@@ -121,7 +128,7 @@ class Mosek {
     double GetParam(MSKdparame dpar) const;
     int GetParam(MSKiparame ipar) const;
 
-    bool       SolutionDef(MSKsoltypee which) const { MSKbooleant soldef; MSK_solutiondef(task.get(),which,&soldef); return soldef != 0; }
+    bool          SolutionDef(MSKsoltypee which) const { MSKbooleant soldef; MSK_solutiondef(task.get(),which,&soldef); return soldef != 0; }
     mosek::ProSta GetProSta(MSKsoltypee which) const { MSKprostae prosta; MSK_getprosta(task.get(),which,&prosta); return (mosek::ProSta)prosta; }
     mosek::SolSta GetSolSta(MSKsoltypee which) const { MSKsolstae solsta; MSK_getsolsta(task.get(),which,&solsta); return (mosek::SolSta)solsta; }
 
@@ -149,6 +156,8 @@ class Mosek {
 
     std::unique_ptr<msktaskt,decltype(delete_msk_task_func)*> task;
 
+    static void message_callback(MSKuserhandle_t handle, const char * msg);
+    static int info_callback(MSKtask_t task, MSKuserhandle_t h, MSKcallbackcodee code, const double * dinf, const int * iinf, const int64_t * liinf);
 };
 
 }
