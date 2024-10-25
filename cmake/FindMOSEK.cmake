@@ -36,7 +36,8 @@ Hints
 ^^^^^
 
 A user may set ``MOSEK_PLATFORM_DIR`` to a Mosek installation platform
-directoru to tell this module where to look.
+directoru to tell this module where to look, or ``MOSEK_BASE`` to point 
+to path where the ``mosek/`` directory is located.
 #]=======================================================================]
 set(MOSEK_FOUND FALSE)
 message(STATUS "Locating MOSEK")
@@ -70,30 +71,29 @@ else()
 endif()
 
 function(FindMosekPlatformInPath RESULT PATH)
+    SET(${RESULT} "")
     if(EXISTS "${PATH}/mosek")
         SET(dirlist "")
-        if(EXISTS "$ENV{HOME}/mosek")
-            FILE(GLOB entries LIST_DIRECTORIES true "$ENV{HOME}/mosek/*")
-            FOREACH(f ${entries})
-                if(IS_DIRECTORY "${f}")
-                    get_filename_component(bn "${f}" NAME)
-                    if("${bn}" MATCHES "^[0-9]+[.][0-9]+$") 
-                        if (${bn} GREATER_EQUAL "10.0")
-                            LIST(APPEND dirlist "${bn}")
-                        endif()
+        FILE(GLOB entries LIST_DIRECTORIES true "${PATH}/mosek/*")
+        FOREACH(f ${entries})
+            if(IS_DIRECTORY "${f}")
+                get_filename_component(bn "${f}" NAME)
+                if("${bn}" MATCHES "^[0-9]+[.][0-9]+$") 
+                    if (${bn} GREATER_EQUAL "10.0")
+                        LIST(APPEND dirlist "${bn}")
                     endif()
                 endif()
-            ENDFOREACH()
-            LIST(SORT dirlist COMPARE NATURAL ORDER DESCENDING)
-        endif()
-
-        LIST(LENGTH dirlist dirlistlen)
-        IF(dirlistlen GREATER 0)
-            LIST(GET dirlist 0 MOSEK_VERSION)
-            if(MOSEK_PLATFORM_NAME)
-                SET("${RESULT}" "${PATH}/mosek/${MOSEK_VERSION}/tools/platform/{MOSEK_PLATFORM_NAME}")
-                return(PROPAGATE "${RESULT}")
             endif()
+        ENDFOREACH()
+        LIST(SORT dirlist COMPARE NATURAL ORDER DESCENDING)
+
+        if(MOSEK_PLATFORM_NAME) 
+            foreach(MOSEK_VERSION ${dirlist})
+                SET(MSKPFDIR "${PATH}/mosek/${MOSEK_VERSION}/tools/platform/${MOSEK_PLATFORM_NAME}")
+                if(EXISTS "${MSKPFDIR}")
+                    SET(${RESULT} ${MSKPFDIR} PARENT_SCOPE)
+                endif()
+            endforeach()
         endif()
     endif()
 endfunction()
@@ -113,18 +113,28 @@ endfunction()
 
 if(MOSEK_PLATFORM_DIR)
     # User defined platform dir directly
-elseif(MOSEK_ROOT)
-    FindMosekPlatformInPath("${MOSEK_ROOT}/mosek" MOSEK_PLATFORM_DIR)
+elseif(MOSEK_BASE)
+    # Look under for MOSEK_ROOT/X.Y
+    FindMosekPlatformInPath(MOSEK_PLATFORM_DIR "${MOSEK_BASE}")
+    if(NOT MOSEK_PLATFORM_DIR)
+        message(FATAL_ERROR "Could not locate MOSEK platform directory under ${MOSEK_BASE}")
+    endif()
 endif()
-if(NOT MOSEK_PLATFORM_NAME)
-
+if(NOT MOSEK_PLATFORM_DIR)
+    # Look in users home dir
+    if(EXISTS $ENV{HOME})
+        FindMosekPlatformInPath(MOSEK_PLATFORM_DIR "$ENV{HOME}")
+    endif()
 endif()
-
-
-
+if(NOT MOSEK_PLATFORM_DIR)
+    # Look in users home dir
+    if(ENV{HOMEDRIVE} AND ENV{HOMEPATH})
+        FindMosekPlatformInPath(MOSEK_PLATFORM_DIR"$ENV{HOMEDRIVE}$ENV{HOMEPATH}")
+    endif()
+endif()
 
 if(NOT MOSEK_PLATFORM_DIR)
-    message(FATAL_ERROR "MOSEK_PLATFORM_DIR: not found")
+    message(FATAL_ERROR "MOSEK_PLATFORM_DIR could not be detected")
 else()
   message(STATUS "MOSEK_PLATFORM_DIR detected: ${MOSEK_PLATFORM_DIR}")
   set(MOSEK_PFDIR_FOUND TRUE)
