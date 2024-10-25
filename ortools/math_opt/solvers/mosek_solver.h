@@ -14,16 +14,16 @@
 #ifndef OR_TOOLS_MATH_OPT_SOLVERS_MOSEK_SOLVER_H_
 #define OR_TOOLS_MATH_OPT_SOLVERS_MOSEK_SOLVER_H_
 
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
-#include <cmath>
 
-#include "mosek/mosekwrp.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "mosek/mosekwrp.h"
 #include "ortools/base/status_builder.h"
 #include "ortools/math_opt/callback.pb.h"
 #include "ortools/math_opt/core/inverted_bounds.h"
@@ -62,28 +62,47 @@ class MosekSolver : public SolverInterface {
   absl::flat_hash_map<int64_t, Mosek::ConeConstraintIndex> coneconstr_map;
   absl::flat_hash_map<int64_t, Mosek::DisjunctiveConstraintIndex> indconstr_map;
 
-  absl::Status ReplaceObjective(const ObjectiveProto & obj);
-  absl::Status AddVariables(const VariablesProto & vars);
-  absl::Status AddConstraints(const LinearConstraintsProto & cons);
-  absl::Status AddConstraints(const LinearConstraintsProto & cons, const SparseDoubleMatrixProto & lincofupds);
-  absl::Status AddIndicatorConstraints(const ::google::protobuf::Map<int64_t, IndicatorConstraintProto> & cons);
-  absl::Status AddConicConstraints(const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto> & cons);
+  absl::Status ReplaceObjective(const ObjectiveProto& obj);
+  absl::Status AddVariables(const VariablesProto& vars);
+  absl::Status AddConstraints(const LinearConstraintsProto& cons);
+  absl::Status AddConstraints(const LinearConstraintsProto& cons,
+                              const SparseDoubleMatrixProto& lincofupds);
+  absl::Status AddIndicatorConstraints(
+      const ::google::protobuf::Map<int64_t, IndicatorConstraintProto>& cons);
+  absl::Status AddConicConstraints(
+      const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto>&
+          cons);
 
-  absl::Status UpdateVariables(const VariableUpdatesProto & varupds);
-  absl::Status UpdateConstraints(const LinearConstraintUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds);
-  absl::Status UpdateObjective(const ObjectiveUpdatesProto & objupds);
-  absl::Status UpdateConstraint(const SecondOrderConeConstraintUpdatesProto& conupds);
+  absl::Status UpdateVariables(const VariableUpdatesProto& varupds);
+  absl::Status UpdateConstraints(const LinearConstraintUpdatesProto& conupds,
+                                 const SparseDoubleMatrixProto& lincofupds);
+  absl::Status UpdateObjective(const ObjectiveUpdatesProto& objupds);
+  absl::Status UpdateConstraint(
+      const SecondOrderConeConstraintUpdatesProto& conupds);
   absl::Status UpdateConstraint(const IndicatorConstraintUpdatesProto& conupds);
 
+  absl::StatusOr<PrimalSolutionProto> PrimalSolution(
+      MSKsoltypee whichsol, const std::vector<int64_t>& ordered_xx_ids,
+      bool skip_zeros);
+  absl::StatusOr<DualSolutionProto> DualSolution(
+      MSKsoltypee whichsol, const std::vector<int64_t>& ordered_y_ids,
+      bool skip_y_zeros, const std::vector<int64_t>& ordered_yx_ids,
+      bool skip_yx_zeros);
+  absl::StatusOr<SolutionProto> Solution(
+      MSKsoltypee whichsol, const std::vector<int64_t>& ordered_xc_ids,
+      const std::vector<int64_t>& ordered_xx_ids, bool skip_xx_zeros,
+      const std::vector<int64_t>& ordered_y_ids, bool skip_y_zeros,
+      const std::vector<int64_t>& ordered_yx_ids, bool skip_yx_zeros);
+  absl::StatusOr<PrimalRayProto> PrimalRay(
+      MSKsoltypee whichsol, const std::vector<int64_t>& ordered_xx_ids,
+      bool skip_zeros);
+  absl::StatusOr<DualRayProto> DualRay(
+      MSKsoltypee whichsol, const std::vector<int64_t>& ordered_y_ids,
+      bool skip_y_zeros, const std::vector<int64_t>& ordered_yx_ids,
+      bool skip_yx_zeros);
 
-  absl::StatusOr<PrimalSolutionProto> PrimalSolution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xx_ids, bool skip_zeros);
-  absl::StatusOr<DualSolutionProto>   DualSolution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids, bool skip_yx_zeros);
-  absl::StatusOr<SolutionProto>       Solution(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xc_ids, const std::vector<int64_t> & ordered_xx_ids, bool skip_xx_zeros, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids, bool skip_yx_zeros);
-  absl::StatusOr<PrimalRayProto>      PrimalRay(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_xx_ids, bool skip_zeros);
-  absl::StatusOr<DualRayProto>        DualRay(MSKsoltypee whichsol, const std::vector<int64_t> & ordered_y_ids, bool skip_y_zeros, const std::vector<int64_t> & ordered_yx_ids, bool skip_yx_zeros);
-
-  MosekSolver(Mosek && msk);
-  MosekSolver(MosekSolver &) = delete;
+  MosekSolver(Mosek&& msk);
+  MosekSolver(MosekSolver&) = delete;
 
 #if 0
   struct SolutionClaims {
@@ -167,4 +186,3 @@ class MosekSolver : public SolverInterface {
 }  // namespace operations_research::math_opt
 
 #endif  // OR_TOOLS_MATH_OPT_SOLVERS_MOSEK_SOLVER_H_
-
