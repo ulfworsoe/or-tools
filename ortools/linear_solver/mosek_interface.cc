@@ -157,14 +157,14 @@ namespace operations_research {
   bool SupportsCallbacks() const override { return true; }
 
   void SetParameters(const MPSolverParameters&) override;
-  bool SetSolverSpecificParametersAsString(const std::string& parameters);
+  bool SetSolverSpecificParametersAsString(const std::string& parameters) override;
 
   void SetRelativeMipGap(double value) override;
   void SetPrimalTolerance(double value) override;
   void SetDualTolerance(double value) override;
-  void SetPresolveMode(int value);
-  void SetScalingMode(int value);
-  void SetLpAlgorithm(int value);
+  void SetPresolveMode(int value) override;
+  void SetScalingMode(int value) override;
+  void SetLpAlgorithm(int value) override;
 
  private:
   static MSKboundkeye bk_from_bounds(double lb, double ub);

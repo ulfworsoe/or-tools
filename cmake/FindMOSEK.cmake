@@ -51,44 +51,76 @@ else()
   message(FATAL_ERROR "FindMosek only works if either C or CXX language is enabled")
 endif()
 
-
-if(NOT MOSEK_PLATFORM_DIR)
-  if(DEFINED ENV{MOSEK_BIN_DIR})
-    set(MOSEK_PLATFORM_DIR ENV{MOSEK_BIN_DIR}/..)
-  elseif(DEFINED ENV{HOME}) 
-      SET(dirlist "")
-      if(EXISTS "$ENV{HOME}/mosek")
-          FILE(GLOB entries LIST_DIRECTORIES true "$ENV{HOME}/mosek/[0-9]*.[0-9]*")          
-          FOREACH(f ${entries})
-              if(IS_DIRECTORY "${f}")
-                  get_filename_component(bn "${f}" NAME)
-                  LIST(APPEND dirlist "${bn}")
-              endif()
-          ENDFOREACH()
-          LIST(SORT dirlist COMPARE NATURAL ORDER DESCENDING)          
-      endif()
-      
-      LIST(GET dirlist 0 MOSEK_VERSION)
-
-      if(APPLE) 
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
-            SET(MOSEK_PLATFORM_DIR "$ENV{HOME}/mosek/${MOSEK_VERSION}/tools/platform/osxaarch64")
-        elseif()
-            message(FATAL_ERROR "Mosek not supported for ${CMAKE_SYSTEM} / ${CMAKE_SYSTEM_PROCESSOR}")
-        endif()
-      elseif(UNIX)
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
-            SET(MOSEK_PLATFORM_DIR "$ENV{HOME}/mosek/${MOSEK_VERSION}/tools/platform/linuxaarch64")
-        else()
-            SET(MOSEK_PLATFORM_DIR "$ENV{HOME}/mosek/${MOSEK_VERSION}/tools/platform/linux64x86")
-        endif()
-      elseif(MSVC)
-          SET(MOSEK_PLATFORM_DIR "$ENV{HOME}/mosek/${MOSEK_VERSION}/tools/platform/win64x86")
-      else()
-        message(FATAL_ERROR "Mosek not supported for ${CMAKE_SYSTEM}")
-      endif()
-  endif()
+if(APPLE) 
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
+        SET(MOSEK_PLATFORM_NAME "osxaarch64")
+    elseif()
+        message(FATAL_ERROR "Mosek not supported for ${CMAKE_SYSTEM} / ${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+elseif(UNIX)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)")
+        SET(MOSEK_PLATFORM_NAME "linuxaarch64")
+    else()
+        SET(MOSEK_PLATFORM_NAME "linux64x86")
+    endif()
+elseif(MSVC)
+    SET(MOSEK_PLATFORM_NAME "win64x86")
+else()
+    message(FATAL_ERROR "Mosek not supported for ${CMAKE_SYSTEM}")
 endif()
+
+function(FindMosekPlatformInPath RESULT PATH)
+    if(EXISTS "${PATH}/mosek")
+        SET(dirlist "")
+        if(EXISTS "$ENV{HOME}/mosek")
+            FILE(GLOB entries LIST_DIRECTORIES true "$ENV{HOME}/mosek/*")
+            FOREACH(f ${entries})
+                if(IS_DIRECTORY "${f}")
+                    get_filename_component(bn "${f}" NAME)
+                    if("${bn}" MATCHES "^[0-9]+[.][0-9]+$") 
+                        if (${bn} GREATER_EQUAL "10.0")
+                            LIST(APPEND dirlist "${bn}")
+                        endif()
+                    endif()
+                endif()
+            ENDFOREACH()
+            LIST(SORT dirlist COMPARE NATURAL ORDER DESCENDING)
+        endif()
+
+        LIST(LENGTH dirlist dirlistlen)
+        IF(dirlistlen GREATER 0)
+            LIST(GET dirlist 0 MOSEK_VERSION)
+            if(MOSEK_PLATFORM_NAME)
+                SET("${RESULT}" "${PATH}/mosek/${MOSEK_VERSION}/tools/platform/{MOSEK_PLATFORM_NAME}")
+                return(PROPAGATE "${RESULT}")
+            endif()
+        endif()
+    endif()
+endfunction()
+
+
+# Where to look for MOSEK:
+# Standard procedure in Linux/OSX is to install MOSEK in the home directory, i.e.
+#   $HOME/mosek/X.Y/...
+# Option 1. The user can specify when running CMake where the MOSEK platform directory is located, e.g.
+#     -DMOSEK_PLATFORM_DIR=$HOME/mosek/10.2/tools/platform/linux64x86/ 
+#   in which case no search is performed.
+# Option 2. The user can specify MOSEK_ROOT when running cmake. MOSEK_ROOT is
+#   the directory where the root mosek/ tree is located.
+# Option 3. Automatic search. We will then attempt to search in the default
+#   locations, and if that fails, assume it is installed in a system location.
+# For option 2 and 3, the newest MOSEK version will be chosen if more are available.
+
+if(MOSEK_PLATFORM_DIR)
+    # User defined platform dir directly
+elseif(MOSEK_ROOT)
+    FindMosekPlatformInPath("${MOSEK_ROOT}/mosek" MOSEK_PLATFORM_DIR)
+endif()
+if(NOT MOSEK_PLATFORM_NAME)
+
+endif()
+
+
 
 
 if(NOT MOSEK_PLATFORM_DIR)

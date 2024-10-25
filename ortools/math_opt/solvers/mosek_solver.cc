@@ -104,7 +104,6 @@ std::ostream & mosek::operator<<(std::ostream & s, ProSta prosta) {
 }
 
 absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
-  //std::cout << "MosekSolver::AddVariables()" << std::endl;
   int num_vars = vars.ids_size();
   int firstvar = msk.NumVar();
 
@@ -140,7 +139,6 @@ absl::Status MosekSolver::AddVariables(const VariablesProto & vars) {
 } // MosekSolver::AddVariables
 
 absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
-  //std::cout << "MosekSolver::ReplaceObjective()" << std::endl;
   msk.PutObjName(obj.name());
   RETURN_IF_ERROR(msk.UpdateObjectiveSense(obj.maximize()));
   auto objcof = obj.linear_coefficients();
@@ -157,7 +155,6 @@ absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto & obj) {
 
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
                                          const SparseDoubleMatrixProto& adata) {
-  //std::cout << "MosekSolver::AddConstraints(cons,data)" << std::endl;
   int firstcon = msk.NumCon();
   auto numcon = cons.ids_size();
   {
@@ -188,22 +185,17 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
   std::vector<Mosek::ConstraintIndex> subi; subi.reserve(nnz);
   std::vector<double> valij; valij.reserve(nnz);
 
-  //std::cout << "MosekSolver::AddConstraints(): var map : " << std::endl;
-  //for (auto [k,v] : variable_map)
-  //  std::cout << "    " << k << " : " << v << std::endl;
   for (const auto id : adata.row_ids())
     subi.push_back(linconstr_map[id]);
   for (const auto id : adata.column_ids())
     subj.push_back(variable_map[id]);
   for (const auto c : adata.coefficients()) 
     valij.push_back(c);
-  //std::cout << "MosekSolver::AddConstraints(): #constraints: " << numcon << ", #nonzeros: " << nnz << std::endl;
   RETURN_IF_ERROR(msk.PutAIJList(subi,subj,valij));
 
   return absl::OkStatus();
 }
 absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto & cons) {
-  //std::cout << "MosekSolver::AddConstraints(cons)" << std::endl;
   int firstcon = msk.NumCon();
   auto numcon = cons.ids_size();
   {
@@ -234,7 +226,6 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto & cons) {
 
 absl::Status MosekSolver::AddIndicatorConstraints(
     const ::google::protobuf::Map<int64_t, IndicatorConstraintProto>& cons) {
-  //std::cout << "MosekSolver::AddIndicatorConstraints()" << std::endl;
   int i = 0;
   std::vector<Mosek::VariableIndex> subj;
   std::vector<double> cof;
@@ -259,7 +250,6 @@ absl::Status MosekSolver::AddIndicatorConstraints(
 absl::Status MosekSolver::AddConicConstraints(
   const ::google::protobuf::Map<int64_t, SecondOrderConeConstraintProto>&
       cons) {
-  //std::cout << "MosekSolver::AddConicConstraints()" << std::endl;
 
   std::vector<Mosek::VariableIndex> subj;
   std::vector<double>  cof;
@@ -301,7 +291,6 @@ absl::Status MosekSolver::AddConicConstraints(
 
 
 absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto& model_update) {
-  //std::cout << "MosekSolver::Update()" << std::endl;
   for (auto id : model_update.deleted_variable_ids()) {
     variable_map.erase(id);
     RETURN_IF_ERROR(msk.ClearVariable(variable_map[id]));
@@ -346,7 +335,6 @@ absl::Status MosekSolver::UpdateVariables(const VariableUpdatesProto & varupds) 
   return absl::OkStatus();
 }
 absl::Status MosekSolver::UpdateConstraints(const LinearConstraintUpdatesProto & conupds, const SparseDoubleMatrixProto & lincofupds) {
-  //std::cout << "MosekSolver::UpdateConstraints()" << std::endl;
   for (int64_t i = 0, n = conupds.lower_bounds().ids_size(); i < n; ++i) {
     RETURN_IF_ERROR(msk.UpdateConstraintLowerBound(linconstr_map[conupds.lower_bounds().ids(i)], conupds.lower_bounds().values(i)));
   }
@@ -403,7 +391,6 @@ absl::Status MosekSolver::UpdateConstraint(const IndicatorConstraintUpdatesProto
 
 absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
     const ModelProto& model, const InitArgs&) {
-  //std::cout << "MosekSolver::New()" << std::endl;
   RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
   
   if (!model.auxiliary_objectives().empty())
@@ -426,7 +413,6 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(
   std::unique_ptr<Mosek> msk(Mosek::Create());
   std::unique_ptr<MosekSolver> mskslv(new MosekSolver(std::move(*msk)));
   mskslv->msk.PutName(model.name());
-  //mskslv->msk.UpdateObjectiveSense(model.objective().maximize());
 
   RETURN_IF_ERROR(mskslv->AddVariables(model.variables()));
   RETURN_IF_ERROR(mskslv->ReplaceObjective(model.objective()));
