@@ -1184,6 +1184,7 @@ int MosekInterface::SolutionCount() {
 }
 
 MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
+
   WallTimer timer;
   timer.Start();
 
@@ -1197,6 +1198,11 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
 
   int numvar;
   MSK_getnumvar(task_, &numvar);
+  bool ismip = false;
+  for (int j = 0; j < numvar && ! ismip; ++j) {
+    MSKvariabletypee vt;
+    MSK_getvartype(task_,j,&vt); ismip = ismip && vt == MSK_VAR_TYPE_INT; 
+  }
   // Set solution hints. Currently this only affects integer solution.
   if (solver_->solution_hint_.size() > 0) {
     std::vector<double> xx(numvar);
@@ -1298,8 +1304,9 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
   }
 
   // Get best objective bound value
-  if (IsMIP() && (result_status_ == MPSolver::FEASIBLE ||
-                  result_status_ == MPSolver::OPTIMAL)) {
+  if (whichsol == MSK_SOL_ITG && 
+      (result_status_ == MPSolver::FEASIBLE ||
+       result_status_ == MPSolver::OPTIMAL)) {
     MSK_getdouinf(task_, MSK_DINF_MIO_OBJ_BOUND, &best_objective_bound_);
     VLOG(1) << "best bound = " << best_objective_bound_;
   }
@@ -1319,7 +1326,7 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
         VLOG(3) << var->name() << ", value = " << xx[i];
       }
     }
-    if (!mip_) {
+    if (whichsol != MSK_SOL_ITG) {
       {
         std::vector<double> slx(numvar);
         std::vector<double> sux(numvar);
