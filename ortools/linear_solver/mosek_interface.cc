@@ -36,6 +36,7 @@
 #include "absl/log/die_if_null.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "mosek.h"
@@ -577,7 +578,8 @@ struct MPCallbackWithMosekContext {
 };
 
 void MSKAPI StreamCallbackImpl(MSKuserhandle_t h, const char* msg) {
-  // std::cout << msg << std::flush;
+  //std::cerr << msg << std::flush;
+  
   MPCallbackWithMosekContext* const callback_with_context =
       static_cast<MPCallbackWithMosekContext*>(h);
 
@@ -769,8 +771,6 @@ bool MosekInterface::AddIndicatorConstraint(MPConstraint* const ct) {
   CHECK(indvar != nullptr);
   CheckedMosekCall(MSK_putvartype(task_, indvar->index(), MSK_VAR_TYPE_INT));
 
-  // TODO: Check if variable type and bounds for an indicator variable are set
-  // by the interface.
   CheckedMosekCall(
       MSK_putvarbound(task_, indvar->index(), MSK_BK_RA, 0.0, 1.0));
 
@@ -896,26 +896,34 @@ int64_t MosekInterface::iterations() const {
   // TODO: Iter Count
   int32_t psim_iter, dsim_iter, intpnt_iter;
   CheckedMosekCall(
-      MSK_getnaintinf(task_, "MSK_IINF_SIM_DUAL_ITER", &psim_iter));
+      MSK_getintinf(task_, MSK_IINF_SIM_DUAL_ITER, &psim_iter));
   CheckedMosekCall(
-      MSK_getnaintinf(task_, "MSK_IINF_SIM_PRIMAL_ITER", &dsim_iter));
+      MSK_getintinf(task_, MSK_IINF_SIM_PRIMAL_ITER, &dsim_iter));
   CheckedMosekCall(
-      MSK_getnaintinf(task_, "MSK_IINF_INTPNT_ITER", &intpnt_iter));
+      MSK_getintinf(task_, MSK_IINF_INTPNT_ITER, &intpnt_iter));
 
-  return intpnt_iter > 0 ? intpnt_iter : psim_iter + dsim_iter;
+  int64_t mio_intpnt_iter, mio_simplex_iter;
+  CheckedMosekCall(MSK_getlintinf(task_,MSK_LIINF_MIO_INTPNT_ITER,  &mio_intpnt_iter));
+  CheckedMosekCall(MSK_getlintinf(task_,MSK_LIINF_MIO_SIMPLEX_ITER, &mio_simplex_iter));
+
+  if (intpnt_iter > 0)
+    return intpnt_iter;
+  else if (psim_iter+dsim_iter > 0)
+    return psim_iter+dsim_iter;
+  else if (mio_simplex_iter > 0)
+    return mio_simplex_iter;
+  else if (mio_intpnt_iter > 0)
+    return mio_intpnt_iter;
+  else 
+    return 0;
 }
 
 int64_t MosekInterface::nodes() const {
-  if (mip_) {
-    if (!CheckSolutionIsSynchronized()) return kUnknownNumberOfNodes;
-    int nnodes;
-    CheckedMosekCall(
-        MSK_getnaintinf(task_, "MSK_IINF_MIO_NUM_SOLVED_NODES", &nnodes));
-    return nnodes;
-  } else {
-    LOG(DFATAL) << "Number of nodes only available for discrete problems.";
-    return kUnknownNumberOfNodes;
-  }
+  if (!CheckSolutionIsSynchronized()) return kUnknownNumberOfNodes;
+  int nnodes;
+  CheckedMosekCall(
+      MSK_getintinf(task_, MSK_IINF_MIO_NUM_SOLVED_NODES, &nnodes));
+  return nnodes;
 }
 
 // Returns the basis status of a row.
@@ -1184,9 +1192,9 @@ int MosekInterface::SolutionCount() {
 }
 
 MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
-
   WallTimer timer;
   timer.Start();
+
 
   // Set log level.
   CheckedMosekCall(MSK_putintparam(task_, MSK_IPAR_LOG, quiet_ ? 0 : 10));
@@ -1245,13 +1253,14 @@ MPSolver::ResultStatus MosekInterface::Solve(const MPSolverParameters& param) {
         .callback = cb,
         .break_solver = &break_solver_};
 
+    auto _remove_cb = absl::MakeCleanup([&]() {
+      MSK_linkfunctotaskstream(task_, MSK_STREAM_LOG, nullptr, nullptr);
+      MSK_putcallbackfunc(task_, nullptr, nullptr);
+    });
     MSK_putcallbackfunc(task_, CallbackImpl, &mp_callback_with_context);
     MSK_linkfunctotaskstream(task_, MSK_STREAM_LOG, &mp_callback_with_context,
                              StreamCallbackImpl);
     CheckedMosekCall(MSK_optimizetrm(task_, &trm));
-    MSK_writedata(task_, "test.ptf");
-    MSK_linkfunctotaskstream(task_, MSK_STREAM_LOG, nullptr, nullptr);
-    MSK_putcallbackfunc(task_, nullptr, nullptr);
   }
 
   VLOG(1) << absl::StrFormat("Solved in %s.",
