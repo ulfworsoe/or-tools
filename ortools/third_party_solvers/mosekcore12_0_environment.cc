@@ -1,0 +1,503 @@
+/* Generated interface for MOSEK Core API 12.0. */
+
+#include "mosekcore12_0_environment.h"
+
+
+/* NOTES on compiling and linking:
+ * To build the MOSEK Core dymalic loader functions this file must be included in the final binary or library.
+ * On Linux and OSX the final library or binary must be linked with libdl.
+ */
+
+namespace operations_research {
+namespace MSK120 {
+
+#ifdef WIN32
+    #include <libloaderapi.h>
+    static const char * libname = "mosekcore12_0.dll";
+    static const char * platformname = "win64x86";
+    #define LIBHANDLE_T HINSTANCE
+    #define LOADLIBRARY(name) LoadLibraryA(name)
+    #define UNLOADLIBRARY(handle) FreeLibrary(handle)
+    #define LOADSYM(handle,name) GetProcAddress(handle,name)
+    const char     pathsep = '\\';
+#else
+    #include <dlfcn.h>
+    #define LIBHANDLE_T void *
+    #define LOADLIBRARY(name) dlopen(name,RTLD_NOW)
+    #define UNLOADLIBRARY(handle) dlclose(handle)
+    #define LOADSYM(handle,name) dlsym(handle,name)
+    #if defined(__APPLE__)
+        static const char * libname = "libmosekcore12_0.dylib";
+        static const char * platformname = "osxaarch64";
+        static const char   pathsep = '/';
+    #elif defined(__linux__) && __arm64__
+        stratic const char pathsep = '/';
+        static const char * platformname = "linuxaarch64";
+        static const char * libname = "libmosekcore12_0.so";
+    #elif defined(__linux__) && __x86_64__
+        static const char * platformname = "linux64x86";
+        static const char * libname = "libmosekcore12_0.so";
+    #else
+        #error "Unsupported platform for MOSEK"
+    #endif
+#endif
+
+template<class F>
+bool loadsym(std::function<F> & target, LIBHANDLE_T h, const char * symname) {
+    void * addr = LOADSYM(h,symname);
+    if (! addr)
+        return false;
+    target = (F*)addr;
+    return true;
+}
+static LIBHANDLE_T libmosek_handle = nullptr;
+
+std::function<const char*(std::int32_t)> get_callback_code_name;
+std::function<const char*(ResCode)> get_resp_name;
+std::function<const char*(ResCode)> get_resp_descr;
+std::function<ResCode(Task_t)> get_last_resp;
+std::function<ResCode(Task_t,char*,std::size_t)> get_last_resp_msg;
+std::function<std::size_t(Task_t)> get_last_resp_msg_len;
+std::function<const char*(TrmCode)> get_trm_name;
+std::function<const char*(TrmCode)> get_trm_descr;
+std::function<Task_t()> new_task;
+std::function<Task_t(Task_t)> new_task_from_task;
+std::function<void(Task_t)> delete_task;
+std::function<ResCode(Task_t,std::int32_t)> reserve_numvar;
+std::function<ResCode(Task_t,std::int32_t)> reserve_numbarvar;
+std::function<ResCode(Task_t,std::int32_t)> reserve_numcon;
+std::function<ResCode(Task_t,std::int64_t)> reserve_numafe;
+std::function<ResCode(Task_t,std::int64_t)> reserve_numafenz;
+std::function<ResCode(Task_t,std::int64_t)> reserve_numdom;
+std::function<ResCode(Task_t,std::int64_t)> reserve_numsymmat;
+std::function<ResCode(Task_t,std::int64_t)> reserve_numsymmatnz;
+std::function<std::int32_t(Task_t)> get_num_var;
+std::function<std::int32_t(Task_t)> get_num_barvar;
+std::function<std::int64_t(Task_t)> get_num_domain;
+std::function<std::int64_t(Task_t)> get_num_row;
+std::function<std::int64_t(Task_t)> get_num_symmat;
+std::function<std::int64_t(Task_t)> get_num_con;
+std::function<std::int64_t(Task_t)> get_num_djc;
+std::function<ResCode(Task_t,std::int32_t)> append_vars;
+std::function<ResCode(Task_t,std::int32_t,VariableType)> put_var_type;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const VariableType*)> put_var_type_slice;
+std::function<ResCode(Task_t,std::int32_t,const std::int32_t*,const VariableType*)> put_var_type_list;
+std::function<ResCode(Task_t,std::int32_t,double,double)> put_var_bound;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const double*,const double*)> put_var_bound_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,double,double)> put_var_bound_slice_value;
+std::function<ResCode(Task_t,std::int32_t,double[1],double[1])> get_var_bound;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,double*,double*)> get_var_bound_slice_values;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int64_t*)> barvar_slice_num_elm;
+std::function<ResCode(Task_t,std::int32_t)> append_barvar;
+std::function<ResCode(Task_t,std::int32_t,const std::int32_t*)> append_barvars;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t[1])> get_dim_barvar;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t*)> get_dim_barvars;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_empty;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_rzero;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_rplus;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_rminus;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_r;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_quadratic_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_rotated_quadratic_cone;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_primal_exponential_cone;
+std::function<ResCode(Task_t,std::int64_t[1])> get_domain_dual_exponential_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,const double[1],std::int64_t[1])> get_domain_primal_power_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,const double[1],std::int64_t[1])> get_domain_dual_power_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_primal_geometric_mean_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_dual_geometric_mean_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_svec_cone;
+std::function<ResCode(Task_t,std::int64_t,DomainType[1],std::int64_t[1],std::int32_t[1])> get_domain_info;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,double*)> get_domain_alpha;
+std::function<ResCode(Task_t,std::int64_t)> append_rows;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,const std::int32_t*,const double*)> put_row;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,const std::int32_t*,const std::int32_t*,const double*)> put_row_slice;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t*,const std::int32_t*,const std::int32_t**,const double**)> put_row_list;
+std::function<ResCode(Task_t,std::int64_t,double)> put_row_g;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,const double*)> put_row_g_slice;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t*,const double*)> put_row_g_list;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,const std::int64_t*,const double*)> put_col;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const std::int64_t*,const std::int64_t*,const double*)> put_col_slice;
+std::function<ResCode(Task_t,std::int32_t,const std::int32_t*,const std::int64_t*,const std::int64_t**,const double**)> put_col_list;
+std::function<ResCode(Task_t,std::int64_t,const std::int64_t*,const std::int32_t*,const double*)> put_ijc_list;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,std::int64_t,std::int64_t*,double*)> put_bar_entry;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t*,std::int32_t*,std::int64_t*,std::int64_t*,double*)> put_bar_entry_list;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,const std::int32_t*,const std::int64_t*,const std::int64_t*,const double*)> put_bar_row;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t[1])> get_row_numnz;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t*)> get_row_slice_numnz;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,std::int32_t*,double*)> get_row;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int32_t*,std::int32_t*,double*)> get_row_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,const std::int32_t*,const std::int32_t*,const double*)> append_symmat;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t*,std::int64_t*,const std::int32_t*,const std::int32_t*,const double*)> append_symmats;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t[1],std::int64_t[1])> get_symmat_info;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int32_t*,std::int32_t*,double*)> get_symmat;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int32_t*,std::int64_t*)> get_symmat_slice_info;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int32_t*,std::int32_t*,double*)> get_symmat_slice;
+std::function<ResCode(Task_t,std::int64_t)> append_empty_cons;
+std::function<ResCode(Task_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*)> append_cons;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const double*)> put_con;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,double)> put_scalar_con;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const std::int64_t*,const double*)> put_con_slice;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t*)> get_con_slice_domains;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t[1])> get_con_slice_num_row;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t*,double*,std::int64_t*)> get_con_slice;
+std::function<ResCode(Task_t,std::int64_t)> append_empty_djcs;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*)> put_djc;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*,const std::int64_t*)> put_djc_slice;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1],std::int64_t[1],std::int64_t[1])> get_djc_info;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t*,std::int64_t*,std::int64_t*,double*)> get_djc;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t[1],std::int64_t[1],std::int64_t[1])> get_djc_slice_info;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t*,std::int64_t*,std::int64_t*,double*,std::int64_t*)> get_djc_slice;
+std::function<void(Task_t,ObjSense)> put_objective_sense;
+std::function<ObjSense(Task_t)> get_objective_sense;
+std::function<ResCode(Task_t,std::int64_t)> put_objective_row;
+std::function<void(Task_t,std::int64_t[1],int[1])> get_objective_row;
+std::function<ResCode(Task_t,TrmCode[1])> optimize;
+std::function<ResCode(Task_t,StreamType)> solution_summary;
+std::function<ResCode(Task_t,TrmCode[1],CallbackHandle,CallbackFunc,CallbackHandle,IntSolCallbackFunc)> optimize_callback;
+std::function<void(Task_t,const char*,NULLABLE const char*)> put_remote_solver;
+std::function<void(Task_t,NULLABLE const char*)> put_optserver_access_token;
+std::function<std::int32_t(Task_t)> get_num_solutions;
+std::function<ResCode(Task_t,std::int32_t,SolType[1])> get_solution_type;
+std::function<ResCode(Task_t,std::int32_t,SolSta[1],SolSta[1])> get_solution_status;
+std::function<ResCode(Task_t,std::int32_t,ProSta[1])> get_problem_status;
+std::function<ResCode(Task_t,std::int32_t,double[1])> get_primal_obj;
+std::function<ResCode(Task_t,std::int32_t,double[1])> get_dual_obj;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,double*)> get_solution_xx_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,double*)> get_solution_slx_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,double*)> get_solution_sux_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int64_t,double*)> get_solution_barxj;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int64_t,double*)> get_solution_barsj;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,std::int64_t,double*)> get_solution_barx_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,std::int64_t,double*)> get_solution_bars_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,int[1])> get_solution_basic_xj;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,int[1])> get_solution_basic_barx;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,int[1])> get_solution_basic_con;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,int[1],int[1])> get_solution_sta_x;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,int[1])> get_solution_sta_barx;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,int[1])> get_solution_sta_con;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,int*)> get_solution_basic_x_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,int*)> get_solution_basic_barx_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,std::int64_t,int*)> get_solution_basic_con_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,int*,int*)> get_solution_sta_x_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t,int*)> get_solution_sta_barx_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,std::int64_t,int*)> get_solution_sta_con_slice;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,std::int64_t,std::int64_t,double*)> get_solution_y_slice;
+std::function<std::int32_t(Task_t)> get_num_input_solutions;
+std::function<ResCode(Task_t,std::int32_t)> copy_solution_to_input;
+std::function<ResCode(Task_t,SolType)> append_solution;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const double*)> put_sol_xx;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const double*)> put_sol_slx;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const double*)> put_sol_sux;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,const std::int32_t*)> put_sol_basic_x;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,const double*)> put_sol_barx;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,const double*)> put_sol_bars;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,std::int64_t,const double*)> put_sol_yi;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t,const std::int32_t*)> put_sol_basic_c;
+std::function<std::int32_t()> get_num_iinf;
+std::function<std::int32_t()> get_num_liinf;
+std::function<std::int32_t()> get_num_dinf;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t[1])> get_iinf;
+std::function<ResCode(Task_t,std::int32_t,std::int64_t[1])> get_liinf;
+std::function<ResCode(Task_t,std::int32_t,double[1])> get_dinf;
+std::function<const char*(std::int32_t)> get_iinf_name;
+std::function<const char*(std::int32_t)> get_liinf_name;
+std::function<const char*(std::int32_t)> get_dinf_name;
+std::function<std::int32_t(const char*)> get_iinf_index;
+std::function<std::int32_t(const char*)> get_liinf_index;
+std::function<std::int32_t(const char*)> get_dinf_index;
+std::function<std::int32_t(Task_t,const char*,double[1])> get_double_parameter;
+std::function<std::int32_t(Task_t,const char*,std::int32_t[1])> get_int_parameter;
+std::function<std::int32_t(Task_t,const char*)> get_parameter_str_len;
+std::function<void(Task_t,const char*,std::int32_t,char*)> get_parameter_str;
+std::function<std::int32_t(Task_t,const char*,double)> put_double_parameter;
+std::function<std::int32_t(Task_t,const char*,std::int32_t)> put_int_parameter;
+std::function<std::int32_t(Task_t,const char*,const char*)> put_parameter_str;
+std::function<std::int32_t(Task_t)> get_task_name_len;
+std::function<std::int32_t(Task_t)> get_obj_name_len;
+std::function<void(Task_t,std::int32_t,char*)> get_task_name;
+std::function<void(Task_t,std::int32_t,char*)> get_obj_name;
+std::function<ResCode(Task_t,const char*)> put_task_name;
+std::function<ResCode(Task_t,const char*)> put_obj_name;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t[1])> get_var_name_len;
+std::function<std::int32_t(Task_t,std::int32_t)> get_var_name_len2;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t[1])> get_barvar_name_len;
+std::function<std::int32_t(Task_t,std::int32_t)> get_barvar_name_len2;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,char*)> get_var_name;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,char*)> get_barvar_name;
+std::function<ResCode(Task_t,std::int32_t,const char*)> put_var_name;
+std::function<ResCode(Task_t,std::int32_t,const char*)> put_barvar_name;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t[1])> get_con_name_len;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t[1])> get_djc_name_len;
+std::function<std::int32_t(Task_t,std::int64_t)> get_con_name_len2;
+std::function<std::int32_t(Task_t,std::int64_t)> get_djc_name_len2;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,char*)> get_con_name;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,char*)> get_djc_name;
+std::function<ResCode(Task_t,std::int64_t,const char*)> put_con_name;
+std::function<ResCode(Task_t,std::int64_t,const char*)> put_djc_name;
+std::function<ResCode(Task_t,const char*)> write_task_to_file;
+std::function<ResCode(Task_t,Format,Compression,WriteHandle,WriteFunc)> write_task_to_handle;
+std::function<ResCode(Task_t,const char*)> write_solution_to_file;
+std::function<ResCode(Task_t,SolutionFormat,Compression,WriteHandle,WriteFunc)> write_solution_to_handle;
+std::function<ResCode(Task_t,const char*)> read_from_file;
+std::function<ResCode(Task_t,Format,Compression,ReadHandle,ReadFunc)> read_from_handle;
+std::function<ResCode(Task_t,StreamType,WriteHandle,StreamFunc)> put_stream_callback;
+std::function<ResCode(Task_t,StreamType)> clear_stream_callback;
+std::function<ResCode(Task_t,ErrorCallbackHandle,ErrorCallbackFunc)> put_error_callback;
+std::function<ResCode(Task_t,ErrorCallbackHandle,ErrorCallbackFunc)> put_warning_callback;
+std::function<ResCode(Task_t)> clear_error_callback;
+std::function<ResCode(Task_t)> clear_warning_callback;
+std::function<void()> license_cleanup;
+std::function<void()> shutdown_global_threadpool;
+std::function<ResCode(std::int32_t,double,const double*,double*)> axpy;
+std::function<ResCode(std::int32_t,const double*,const double*,double[1])> dot;
+std::function<ResCode(int,std::int32_t,std::int32_t,double,const double*,const double*,double,double*)> gemv;
+std::function<ResCode(int,int,std::int32_t,std::int32_t,std::int32_t,double,const double*,const double*,double,double*)> gemm;
+std::function<ResCode(int,int,std::int32_t,std::int32_t,double,const double*,double,double*)> syrk;
+std::function<ResCode(int,std::int32_t,const std::int32_t*,const std::int64_t*,std::int64_t,const std::int32_t*,const double*,double*)> sparse_triangular_solve_dense;
+std::function<ResCode(int,std::int32_t,double*)> potrf;
+std::function<ResCode(int,std::int32_t,const double*,double*)> syeig;
+std::function<ResCode(int,std::int32_t,double*,double*)> syevd;
+std::function<ResCode(int,double,std::int32_t,std::int64_t,const Task_t*,TrmCode*,ResCode*)> optimize_batch;
+std::function<ResCode(Feature)> check_out_license;
+std::function<ResCode(Feature)> check_in_license;
+std::function<ResCode()> check_in_all;
+std::function<ResCode(int)> echo_intro;
+std::function<void(std::int32_t[1],std::int32_t[1],std::int32_t[1])> get_version;
+std::function<ResCode(int)> put_license_debug;
+std::function<ResCode(NULLABLE const std::int32_t[21])> put_license_code;
+std::function<ResCode(int)> put_license_wait;
+std::function<ResCode(NULLABLE const char*)> put_license_path;
+
+int library_initialized() {
+    return libmosek_handle != NULL;
+}
+
+int initialize_library() {
+    libmosek_handle = dlopen(libname, RTLD_NOW);
+    if (!libmosek_handle) return 1;
+
+    if (! loadsym(get_callback_code_name,libmosek_handle,"MSK120_get_callback_code_name")) goto ERROR;
+    if (! loadsym(get_resp_name,libmosek_handle,"MSK120_get_resp_name")) goto ERROR;
+    if (! loadsym(get_resp_descr,libmosek_handle,"MSK120_get_resp_descr")) goto ERROR;
+    if (! loadsym(get_last_resp,libmosek_handle,"MSK120_get_last_resp")) goto ERROR;
+    if (! loadsym(get_last_resp_msg,libmosek_handle,"MSK120_get_last_resp_msg")) goto ERROR;
+    if (! loadsym(get_last_resp_msg_len,libmosek_handle,"MSK120_get_last_resp_msg_len")) goto ERROR;
+    if (! loadsym(get_trm_name,libmosek_handle,"MSK120_get_trm_name")) goto ERROR;
+    if (! loadsym(get_trm_descr,libmosek_handle,"MSK120_get_trm_descr")) goto ERROR;
+    if (! loadsym(new_task,libmosek_handle,"MSK120_new_task")) goto ERROR;
+    if (! loadsym(new_task_from_task,libmosek_handle,"MSK120_new_task_from_task")) goto ERROR;
+    if (! loadsym(delete_task,libmosek_handle,"MSK120_delete_task")) goto ERROR;
+    if (! loadsym(reserve_numvar,libmosek_handle,"MSK120_reserve_numvar")) goto ERROR;
+    if (! loadsym(reserve_numbarvar,libmosek_handle,"MSK120_reserve_numbarvar")) goto ERROR;
+    if (! loadsym(reserve_numcon,libmosek_handle,"MSK120_reserve_numcon")) goto ERROR;
+    if (! loadsym(reserve_numafe,libmosek_handle,"MSK120_reserve_numafe")) goto ERROR;
+    if (! loadsym(reserve_numafenz,libmosek_handle,"MSK120_reserve_numafenz")) goto ERROR;
+    if (! loadsym(reserve_numdom,libmosek_handle,"MSK120_reserve_numdom")) goto ERROR;
+    if (! loadsym(reserve_numsymmat,libmosek_handle,"MSK120_reserve_numsymmat")) goto ERROR;
+    if (! loadsym(reserve_numsymmatnz,libmosek_handle,"MSK120_reserve_numsymmatnz")) goto ERROR;
+    if (! loadsym(get_num_var,libmosek_handle,"MSK120_get_num_var")) goto ERROR;
+    if (! loadsym(get_num_barvar,libmosek_handle,"MSK120_get_num_barvar")) goto ERROR;
+    if (! loadsym(get_num_domain,libmosek_handle,"MSK120_get_num_domain")) goto ERROR;
+    if (! loadsym(get_num_row,libmosek_handle,"MSK120_get_num_row")) goto ERROR;
+    if (! loadsym(get_num_symmat,libmosek_handle,"MSK120_get_num_symmat")) goto ERROR;
+    if (! loadsym(get_num_con,libmosek_handle,"MSK120_get_num_con")) goto ERROR;
+    if (! loadsym(get_num_djc,libmosek_handle,"MSK120_get_num_djc")) goto ERROR;
+    if (! loadsym(append_vars,libmosek_handle,"MSK120_append_vars")) goto ERROR;
+    if (! loadsym(put_var_type,libmosek_handle,"MSK120_put_var_type")) goto ERROR;
+    if (! loadsym(put_var_type_slice,libmosek_handle,"MSK120_put_var_type_slice")) goto ERROR;
+    if (! loadsym(put_var_type_list,libmosek_handle,"MSK120_put_var_type_list")) goto ERROR;
+    if (! loadsym(put_var_bound,libmosek_handle,"MSK120_put_var_bound")) goto ERROR;
+    if (! loadsym(put_var_bound_slice,libmosek_handle,"MSK120_put_var_bound_slice")) goto ERROR;
+    if (! loadsym(put_var_bound_slice_value,libmosek_handle,"MSK120_put_var_bound_slice_value")) goto ERROR;
+    if (! loadsym(get_var_bound,libmosek_handle,"MSK120_get_var_bound")) goto ERROR;
+    if (! loadsym(get_var_bound_slice_values,libmosek_handle,"MSK120_get_var_bound_slice_values")) goto ERROR;
+    if (! loadsym(barvar_slice_num_elm,libmosek_handle,"MSK120_barvar_slice_num_elm")) goto ERROR;
+    if (! loadsym(append_barvar,libmosek_handle,"MSK120_append_barvar")) goto ERROR;
+    if (! loadsym(append_barvars,libmosek_handle,"MSK120_append_barvars")) goto ERROR;
+    if (! loadsym(get_dim_barvar,libmosek_handle,"MSK120_get_dim_barvar")) goto ERROR;
+    if (! loadsym(get_dim_barvars,libmosek_handle,"MSK120_get_dim_barvars")) goto ERROR;
+    if (! loadsym(get_domain_empty,libmosek_handle,"MSK120_get_domain_empty")) goto ERROR;
+    if (! loadsym(get_domain_rzero,libmosek_handle,"MSK120_get_domain_rzero")) goto ERROR;
+    if (! loadsym(get_domain_rplus,libmosek_handle,"MSK120_get_domain_rplus")) goto ERROR;
+    if (! loadsym(get_domain_rminus,libmosek_handle,"MSK120_get_domain_rminus")) goto ERROR;
+    if (! loadsym(get_domain_r,libmosek_handle,"MSK120_get_domain_r")) goto ERROR;
+    if (! loadsym(get_domain_quadratic_cone,libmosek_handle,"MSK120_get_domain_quadratic_cone")) goto ERROR;
+    if (! loadsym(get_domain_rotated_quadratic_cone,libmosek_handle,"MSK120_get_domain_rotated_quadratic_cone")) goto ERROR;
+    if (! loadsym(get_domain_primal_exponential_cone,libmosek_handle,"MSK120_get_domain_primal_exponential_cone")) goto ERROR;
+    if (! loadsym(get_domain_dual_exponential_cone,libmosek_handle,"MSK120_get_domain_dual_exponential_cone")) goto ERROR;
+    if (! loadsym(get_domain_primal_power_cone,libmosek_handle,"MSK120_get_domain_primal_power_cone")) goto ERROR;
+    if (! loadsym(get_domain_dual_power_cone,libmosek_handle,"MSK120_get_domain_dual_power_cone")) goto ERROR;
+    if (! loadsym(get_domain_primal_geometric_mean_cone,libmosek_handle,"MSK120_get_domain_primal_geometric_mean_cone")) goto ERROR;
+    if (! loadsym(get_domain_dual_geometric_mean_cone,libmosek_handle,"MSK120_get_domain_dual_geometric_mean_cone")) goto ERROR;
+    if (! loadsym(get_domain_svec_cone,libmosek_handle,"MSK120_get_domain_svec_cone")) goto ERROR;
+    if (! loadsym(get_domain_info,libmosek_handle,"MSK120_get_domain_info")) goto ERROR;
+    if (! loadsym(get_domain_alpha,libmosek_handle,"MSK120_get_domain_alpha")) goto ERROR;
+    if (! loadsym(append_rows,libmosek_handle,"MSK120_append_rows")) goto ERROR;
+    if (! loadsym(put_row,libmosek_handle,"MSK120_put_row")) goto ERROR;
+    if (! loadsym(put_row_slice,libmosek_handle,"MSK120_put_row_slice")) goto ERROR;
+    if (! loadsym(put_row_list,libmosek_handle,"MSK120_put_row_list")) goto ERROR;
+    if (! loadsym(put_row_g,libmosek_handle,"MSK120_put_row_g")) goto ERROR;
+    if (! loadsym(put_row_g_slice,libmosek_handle,"MSK120_put_row_g_slice")) goto ERROR;
+    if (! loadsym(put_row_g_list,libmosek_handle,"MSK120_put_row_g_list")) goto ERROR;
+    if (! loadsym(put_col,libmosek_handle,"MSK120_put_col")) goto ERROR;
+    if (! loadsym(put_col_slice,libmosek_handle,"MSK120_put_col_slice")) goto ERROR;
+    if (! loadsym(put_col_list,libmosek_handle,"MSK120_put_col_list")) goto ERROR;
+    if (! loadsym(put_ijc_list,libmosek_handle,"MSK120_put_ijc_list")) goto ERROR;
+    if (! loadsym(put_bar_entry,libmosek_handle,"MSK120_put_bar_entry")) goto ERROR;
+    if (! loadsym(put_bar_entry_list,libmosek_handle,"MSK120_put_bar_entry_list")) goto ERROR;
+    if (! loadsym(put_bar_row,libmosek_handle,"MSK120_put_bar_row")) goto ERROR;
+    if (! loadsym(get_row_numnz,libmosek_handle,"MSK120_get_row_numnz")) goto ERROR;
+    if (! loadsym(get_row_slice_numnz,libmosek_handle,"MSK120_get_row_slice_numnz")) goto ERROR;
+    if (! loadsym(get_row,libmosek_handle,"MSK120_get_row")) goto ERROR;
+    if (! loadsym(get_row_slice,libmosek_handle,"MSK120_get_row_slice")) goto ERROR;
+    if (! loadsym(append_symmat,libmosek_handle,"MSK120_append_symmat")) goto ERROR;
+    if (! loadsym(append_symmats,libmosek_handle,"MSK120_append_symmats")) goto ERROR;
+    if (! loadsym(get_symmat_info,libmosek_handle,"MSK120_get_symmat_info")) goto ERROR;
+    if (! loadsym(get_symmat,libmosek_handle,"MSK120_get_symmat")) goto ERROR;
+    if (! loadsym(get_symmat_slice_info,libmosek_handle,"MSK120_get_symmat_slice_info")) goto ERROR;
+    if (! loadsym(get_symmat_slice,libmosek_handle,"MSK120_get_symmat_slice")) goto ERROR;
+    if (! loadsym(append_empty_cons,libmosek_handle,"MSK120_append_empty_cons")) goto ERROR;
+    if (! loadsym(append_cons,libmosek_handle,"MSK120_append_cons")) goto ERROR;
+    if (! loadsym(put_con,libmosek_handle,"MSK120_put_con")) goto ERROR;
+    if (! loadsym(put_scalar_con,libmosek_handle,"MSK120_put_scalar_con")) goto ERROR;
+    if (! loadsym(put_con_slice,libmosek_handle,"MSK120_put_con_slice")) goto ERROR;
+    if (! loadsym(get_con_slice_domains,libmosek_handle,"MSK120_get_con_slice_domains")) goto ERROR;
+    if (! loadsym(get_con_slice_num_row,libmosek_handle,"MSK120_get_con_slice_num_row")) goto ERROR;
+    if (! loadsym(get_con_slice,libmosek_handle,"MSK120_get_con_slice")) goto ERROR;
+    if (! loadsym(append_empty_djcs,libmosek_handle,"MSK120_append_empty_djcs")) goto ERROR;
+    if (! loadsym(put_djc,libmosek_handle,"MSK120_put_djc")) goto ERROR;
+    if (! loadsym(put_djc_slice,libmosek_handle,"MSK120_put_djc_slice")) goto ERROR;
+    if (! loadsym(get_djc_info,libmosek_handle,"MSK120_get_djc_info")) goto ERROR;
+    if (! loadsym(get_djc,libmosek_handle,"MSK120_get_djc")) goto ERROR;
+    if (! loadsym(get_djc_slice_info,libmosek_handle,"MSK120_get_djc_slice_info")) goto ERROR;
+    if (! loadsym(get_djc_slice,libmosek_handle,"MSK120_get_djc_slice")) goto ERROR;
+    if (! loadsym(put_objective_sense,libmosek_handle,"MSK120_put_objective_sense")) goto ERROR;
+    if (! loadsym(get_objective_sense,libmosek_handle,"MSK120_get_objective_sense")) goto ERROR;
+    if (! loadsym(put_objective_row,libmosek_handle,"MSK120_put_objective_row")) goto ERROR;
+    if (! loadsym(get_objective_row,libmosek_handle,"MSK120_get_objective_row")) goto ERROR;
+    if (! loadsym(optimize,libmosek_handle,"MSK120_optimize")) goto ERROR;
+    if (! loadsym(solution_summary,libmosek_handle,"MSK120_solution_summary")) goto ERROR;
+    if (! loadsym(optimize_callback,libmosek_handle,"MSK120_optimize_callback")) goto ERROR;
+    if (! loadsym(put_remote_solver,libmosek_handle,"MSK120_put_remote_solver")) goto ERROR;
+    if (! loadsym(put_optserver_access_token,libmosek_handle,"MSK120_put_optserver_access_token")) goto ERROR;
+    if (! loadsym(get_num_solutions,libmosek_handle,"MSK120_get_num_solutions")) goto ERROR;
+    if (! loadsym(get_solution_type,libmosek_handle,"MSK120_get_solution_type")) goto ERROR;
+    if (! loadsym(get_solution_status,libmosek_handle,"MSK120_get_solution_status")) goto ERROR;
+    if (! loadsym(get_problem_status,libmosek_handle,"MSK120_get_problem_status")) goto ERROR;
+    if (! loadsym(get_primal_obj,libmosek_handle,"MSK120_get_primal_obj")) goto ERROR;
+    if (! loadsym(get_dual_obj,libmosek_handle,"MSK120_get_dual_obj")) goto ERROR;
+    if (! loadsym(get_solution_xx_slice,libmosek_handle,"MSK120_get_solution_xx_slice")) goto ERROR;
+    if (! loadsym(get_solution_slx_slice,libmosek_handle,"MSK120_get_solution_slx_slice")) goto ERROR;
+    if (! loadsym(get_solution_sux_slice,libmosek_handle,"MSK120_get_solution_sux_slice")) goto ERROR;
+    if (! loadsym(get_solution_barxj,libmosek_handle,"MSK120_get_solution_barxj")) goto ERROR;
+    if (! loadsym(get_solution_barsj,libmosek_handle,"MSK120_get_solution_barsj")) goto ERROR;
+    if (! loadsym(get_solution_barx_slice,libmosek_handle,"MSK120_get_solution_barx_slice")) goto ERROR;
+    if (! loadsym(get_solution_bars_slice,libmosek_handle,"MSK120_get_solution_bars_slice")) goto ERROR;
+    if (! loadsym(get_solution_basic_xj,libmosek_handle,"MSK120_get_solution_basic_xj")) goto ERROR;
+    if (! loadsym(get_solution_basic_barx,libmosek_handle,"MSK120_get_solution_basic_barx")) goto ERROR;
+    if (! loadsym(get_solution_basic_con,libmosek_handle,"MSK120_get_solution_basic_con")) goto ERROR;
+    if (! loadsym(get_solution_sta_x,libmosek_handle,"MSK120_get_solution_sta_x")) goto ERROR;
+    if (! loadsym(get_solution_sta_barx,libmosek_handle,"MSK120_get_solution_sta_barx")) goto ERROR;
+    if (! loadsym(get_solution_sta_con,libmosek_handle,"MSK120_get_solution_sta_con")) goto ERROR;
+    if (! loadsym(get_solution_basic_x_slice,libmosek_handle,"MSK120_get_solution_basic_x_slice")) goto ERROR;
+    if (! loadsym(get_solution_basic_barx_slice,libmosek_handle,"MSK120_get_solution_basic_barx_slice")) goto ERROR;
+    if (! loadsym(get_solution_basic_con_slice,libmosek_handle,"MSK120_get_solution_basic_con_slice")) goto ERROR;
+    if (! loadsym(get_solution_sta_x_slice,libmosek_handle,"MSK120_get_solution_sta_x_slice")) goto ERROR;
+    if (! loadsym(get_solution_sta_barx_slice,libmosek_handle,"MSK120_get_solution_sta_barx_slice")) goto ERROR;
+    if (! loadsym(get_solution_sta_con_slice,libmosek_handle,"MSK120_get_solution_sta_con_slice")) goto ERROR;
+    if (! loadsym(get_solution_y_slice,libmosek_handle,"MSK120_get_solution_y_slice")) goto ERROR;
+    if (! loadsym(get_num_input_solutions,libmosek_handle,"MSK120_get_num_input_solutions")) goto ERROR;
+    if (! loadsym(copy_solution_to_input,libmosek_handle,"MSK120_copy_solution_to_input")) goto ERROR;
+    if (! loadsym(append_solution,libmosek_handle,"MSK120_append_solution")) goto ERROR;
+    if (! loadsym(put_sol_xx,libmosek_handle,"MSK120_put_sol_xx")) goto ERROR;
+    if (! loadsym(put_sol_slx,libmosek_handle,"MSK120_put_sol_slx")) goto ERROR;
+    if (! loadsym(put_sol_sux,libmosek_handle,"MSK120_put_sol_sux")) goto ERROR;
+    if (! loadsym(put_sol_basic_x,libmosek_handle,"MSK120_put_sol_basic_x")) goto ERROR;
+    if (! loadsym(put_sol_barx,libmosek_handle,"MSK120_put_sol_barx")) goto ERROR;
+    if (! loadsym(put_sol_bars,libmosek_handle,"MSK120_put_sol_bars")) goto ERROR;
+    if (! loadsym(put_sol_yi,libmosek_handle,"MSK120_put_sol_yi")) goto ERROR;
+    if (! loadsym(put_sol_basic_c,libmosek_handle,"MSK120_put_sol_basic_c")) goto ERROR;
+    if (! loadsym(get_num_iinf,libmosek_handle,"MSK120_get_num_iinf")) goto ERROR;
+    if (! loadsym(get_num_liinf,libmosek_handle,"MSK120_get_num_liinf")) goto ERROR;
+    if (! loadsym(get_num_dinf,libmosek_handle,"MSK120_get_num_dinf")) goto ERROR;
+    if (! loadsym(get_iinf,libmosek_handle,"MSK120_get_iinf")) goto ERROR;
+    if (! loadsym(get_liinf,libmosek_handle,"MSK120_get_liinf")) goto ERROR;
+    if (! loadsym(get_dinf,libmosek_handle,"MSK120_get_dinf")) goto ERROR;
+    if (! loadsym(get_iinf_name,libmosek_handle,"MSK120_get_iinf_name")) goto ERROR;
+    if (! loadsym(get_liinf_name,libmosek_handle,"MSK120_get_liinf_name")) goto ERROR;
+    if (! loadsym(get_dinf_name,libmosek_handle,"MSK120_get_dinf_name")) goto ERROR;
+    if (! loadsym(get_iinf_index,libmosek_handle,"MSK120_get_iinf_index")) goto ERROR;
+    if (! loadsym(get_liinf_index,libmosek_handle,"MSK120_get_liinf_index")) goto ERROR;
+    if (! loadsym(get_dinf_index,libmosek_handle,"MSK120_get_dinf_index")) goto ERROR;
+    if (! loadsym(get_double_parameter,libmosek_handle,"MSK120_get_double_parameter")) goto ERROR;
+    if (! loadsym(get_int_parameter,libmosek_handle,"MSK120_get_int_parameter")) goto ERROR;
+    if (! loadsym(get_parameter_str_len,libmosek_handle,"MSK120_get_parameter_str_len")) goto ERROR;
+    if (! loadsym(get_parameter_str,libmosek_handle,"MSK120_get_parameter_str")) goto ERROR;
+    if (! loadsym(put_double_parameter,libmosek_handle,"MSK120_put_double_parameter")) goto ERROR;
+    if (! loadsym(put_int_parameter,libmosek_handle,"MSK120_put_int_parameter")) goto ERROR;
+    if (! loadsym(put_parameter_str,libmosek_handle,"MSK120_put_parameter_str")) goto ERROR;
+    if (! loadsym(get_task_name_len,libmosek_handle,"MSK120_get_task_name_len")) goto ERROR;
+    if (! loadsym(get_obj_name_len,libmosek_handle,"MSK120_get_obj_name_len")) goto ERROR;
+    if (! loadsym(get_task_name,libmosek_handle,"MSK120_get_task_name")) goto ERROR;
+    if (! loadsym(get_obj_name,libmosek_handle,"MSK120_get_obj_name")) goto ERROR;
+    if (! loadsym(put_task_name,libmosek_handle,"MSK120_put_task_name")) goto ERROR;
+    if (! loadsym(put_obj_name,libmosek_handle,"MSK120_put_obj_name")) goto ERROR;
+    if (! loadsym(get_var_name_len,libmosek_handle,"MSK120_get_var_name_len")) goto ERROR;
+    if (! loadsym(get_var_name_len2,libmosek_handle,"MSK120_get_var_name_len2")) goto ERROR;
+    if (! loadsym(get_barvar_name_len,libmosek_handle,"MSK120_get_barvar_name_len")) goto ERROR;
+    if (! loadsym(get_barvar_name_len2,libmosek_handle,"MSK120_get_barvar_name_len2")) goto ERROR;
+    if (! loadsym(get_var_name,libmosek_handle,"MSK120_get_var_name")) goto ERROR;
+    if (! loadsym(get_barvar_name,libmosek_handle,"MSK120_get_barvar_name")) goto ERROR;
+    if (! loadsym(put_var_name,libmosek_handle,"MSK120_put_var_name")) goto ERROR;
+    if (! loadsym(put_barvar_name,libmosek_handle,"MSK120_put_barvar_name")) goto ERROR;
+    if (! loadsym(get_con_name_len,libmosek_handle,"MSK120_get_con_name_len")) goto ERROR;
+    if (! loadsym(get_djc_name_len,libmosek_handle,"MSK120_get_djc_name_len")) goto ERROR;
+    if (! loadsym(get_con_name_len2,libmosek_handle,"MSK120_get_con_name_len2")) goto ERROR;
+    if (! loadsym(get_djc_name_len2,libmosek_handle,"MSK120_get_djc_name_len2")) goto ERROR;
+    if (! loadsym(get_con_name,libmosek_handle,"MSK120_get_con_name")) goto ERROR;
+    if (! loadsym(get_djc_name,libmosek_handle,"MSK120_get_djc_name")) goto ERROR;
+    if (! loadsym(put_con_name,libmosek_handle,"MSK120_put_con_name")) goto ERROR;
+    if (! loadsym(put_djc_name,libmosek_handle,"MSK120_put_djc_name")) goto ERROR;
+    if (! loadsym(write_task_to_file,libmosek_handle,"MSK120_write_task_to_file")) goto ERROR;
+    if (! loadsym(write_task_to_handle,libmosek_handle,"MSK120_write_task_to_handle")) goto ERROR;
+    if (! loadsym(write_solution_to_file,libmosek_handle,"MSK120_write_solution_to_file")) goto ERROR;
+    if (! loadsym(write_solution_to_handle,libmosek_handle,"MSK120_write_solution_to_handle")) goto ERROR;
+    if (! loadsym(read_from_file,libmosek_handle,"MSK120_read_from_file")) goto ERROR;
+    if (! loadsym(read_from_handle,libmosek_handle,"MSK120_read_from_handle")) goto ERROR;
+    if (! loadsym(put_stream_callback,libmosek_handle,"MSK120_put_stream_callback")) goto ERROR;
+    if (! loadsym(clear_stream_callback,libmosek_handle,"MSK120_clear_stream_callback")) goto ERROR;
+    if (! loadsym(put_error_callback,libmosek_handle,"MSK120_put_error_callback")) goto ERROR;
+    if (! loadsym(put_warning_callback,libmosek_handle,"MSK120_put_warning_callback")) goto ERROR;
+    if (! loadsym(clear_error_callback,libmosek_handle,"MSK120_clear_error_callback")) goto ERROR;
+    if (! loadsym(clear_warning_callback,libmosek_handle,"MSK120_clear_warning_callback")) goto ERROR;
+    if (! loadsym(license_cleanup,libmosek_handle,"MSK120_license_cleanup")) goto ERROR;
+    if (! loadsym(shutdown_global_threadpool,libmosek_handle,"MSK120_shutdown_global_threadpool")) goto ERROR;
+    if (! loadsym(axpy,libmosek_handle,"MSK120_axpy")) goto ERROR;
+    if (! loadsym(dot,libmosek_handle,"MSK120_dot")) goto ERROR;
+    if (! loadsym(gemv,libmosek_handle,"MSK120_gemv")) goto ERROR;
+    if (! loadsym(gemm,libmosek_handle,"MSK120_gemm")) goto ERROR;
+    if (! loadsym(syrk,libmosek_handle,"MSK120_syrk")) goto ERROR;
+    if (! loadsym(sparse_triangular_solve_dense,libmosek_handle,"MSK120_sparse_triangular_solve_dense")) goto ERROR;
+    if (! loadsym(potrf,libmosek_handle,"MSK120_potrf")) goto ERROR;
+    if (! loadsym(syeig,libmosek_handle,"MSK120_syeig")) goto ERROR;
+    if (! loadsym(syevd,libmosek_handle,"MSK120_syevd")) goto ERROR;
+    if (! loadsym(optimize_batch,libmosek_handle,"MSK120_optimize_batch")) goto ERROR;
+    if (! loadsym(check_out_license,libmosek_handle,"MSK120_check_out_license")) goto ERROR;
+    if (! loadsym(check_in_license,libmosek_handle,"MSK120_check_in_license")) goto ERROR;
+    if (! loadsym(check_in_all,libmosek_handle,"MSK120_check_in_all")) goto ERROR;
+    if (! loadsym(echo_intro,libmosek_handle,"MSK120_echo_intro")) goto ERROR;
+    if (! loadsym(get_version,libmosek_handle,"MSK120_get_version")) goto ERROR;
+    if (! loadsym(put_license_debug,libmosek_handle,"MSK120_put_license_debug")) goto ERROR;
+    if (! loadsym(put_license_code,libmosek_handle,"MSK120_put_license_code")) goto ERROR;
+    if (! loadsym(put_license_wait,libmosek_handle,"MSK120_put_license_wait")) goto ERROR;
+    if (! loadsym(put_license_path,libmosek_handle,"MSK120_put_license_path")) goto ERROR;
+    goto SUCCESS;
+ERROR:
+    UNLOADLIBRARY(libmosek_handle);
+    libmosek_handle = NULL;
+    return 1;
+SUCCESS:
+    return 0;
+}
+} // namespace MSK{vmajor}{vminor}
+} // operations_research

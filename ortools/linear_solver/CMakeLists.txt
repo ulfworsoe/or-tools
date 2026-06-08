@@ -74,6 +74,11 @@ if(USE_XPRESS)
   list(APPEND _SRCS xpress_interface.cc)
 endif()
 
+if(USE_MOSEK)
+  list(APPEND _SRCS mosek_interface.cc)
+endif()
+
+
 set(NAME ${PROJECT_NAME}_linear_solver)
 
 # Will be merge in libortools.so

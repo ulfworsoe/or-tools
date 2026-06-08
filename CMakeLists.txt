@@ -316,6 +316,11 @@ message(STATUS "CPLEX support: ${USE_CPLEX}")
 option(USE_XPRESS "Use the Xpress solver" ON)
 message(STATUS "Xpress support: ${USE_XPRESS}")
 
+## MOSEK
+# Since it is dynamicaly loaded upon use, OFF is currently not supported.
+option(USE_MOSEK "Use the Mosek solver" ON)
+message(STATUS "Mosek support: ${USE_MOSEK}")
+
 # Language specific options
 CMAKE_DEPENDENT_OPTION(BUILD_CXX_DOC "Build the C++ doc" OFF "NOT BUILD_DOC" ON)
 message(STATUS "C++: Build doc: ${BUILD_CXX_DOC}")
