@@ -93,6 +93,7 @@ bool SolverTypeIsMip(MPModelRequest::SolverType solver_type) {
     case MPModelRequest::HIGHS_LINEAR_PROGRAMMING:
     case MPModelRequest::XPRESS_LINEAR_PROGRAMMING:
     case MPModelRequest::CPLEX_LINEAR_PROGRAMMING:
+    case MPModelRequest::MOSEK_LINEAR_PROGRAMMING:
       return false;
 
     case MPModelRequest::SCIP_MIXED_INTEGER_PROGRAMMING:
@@ -104,6 +105,7 @@ bool SolverTypeIsMip(MPModelRequest::SolverType solver_type) {
     case MPModelRequest::HIGHS_MIXED_INTEGER_PROGRAMMING:
     case MPModelRequest::XPRESS_MIXED_INTEGER_PROGRAMMING:
     case MPModelRequest::CPLEX_MIXED_INTEGER_PROGRAMMING:
+    case MPModelRequest::MOSEK_MIXED_INTEGER_PROGRAMMING:
       return true;
   }
   LOG(DFATAL) << "Invalid SolverType: " << solver_type;
@@ -441,6 +443,7 @@ constexpr
         {MPSolver::HIGHS_LINEAR_PROGRAMMING, "highs_lp"},
         {MPSolver::CPLEX_LINEAR_PROGRAMMING, "cplex_lp"},
         {MPSolver::XPRESS_LINEAR_PROGRAMMING, "xpress_lp"},
+        {MPSolver::MOSEK_LINEAR_PROGRAMMING, "mosek"},
         {MPSolver::SCIP_MIXED_INTEGER_PROGRAMMING, "scip"},
         {MPSolver::CBC_MIXED_INTEGER_PROGRAMMING, "cbc"},
         {MPSolver::SAT_INTEGER_PROGRAMMING, "sat"},
@@ -451,6 +454,7 @@ constexpr
         {MPSolver::PDLP_LINEAR_PROGRAMMING, "pdlp"},
         {MPSolver::CPLEX_MIXED_INTEGER_PROGRAMMING, "cplex"},
         {MPSolver::XPRESS_MIXED_INTEGER_PROGRAMMING, "xpress"},
+        {MPSolver::MOSEK_MIXED_INTEGER_PROGRAMMING, "mosek"},
 };
 // static
 bool MPSolver::ParseSolverType(absl::string_view solver_id,

@@ -1,6 +1,7 @@
 /* Generated interface for MOSEK Core API 12.0. */
 
 #include "mosekcore12_0_environment.h"
+#include<iostream>
 
 
 /* NOTES on compiling and linking:
@@ -10,6 +11,7 @@
 
 namespace operations_research {
 namespace MSK120 {
+
 
 #ifdef WIN32
     #include <libloaderapi.h>
@@ -35,6 +37,7 @@ namespace MSK120 {
         static const char * platformname = "linuxaarch64";
         static const char * libname = "libmosekcore12_0.so";
     #elif defined(__linux__) && __x86_64__
+        static const char   pathsep = '/';
         static const char * platformname = "linux64x86";
         static const char * libname = "libmosekcore12_0.so";
     #else
@@ -45,11 +48,13 @@ namespace MSK120 {
 template<class F>
 bool loadsym(std::function<F> & target, LIBHANDLE_T h, const char * symname) {
     void * addr = LOADSYM(h,symname);
-    if (! addr)
+    if (! addr) {
         return false;
+    }
     target = (F*)addr;
     return true;
 }
+
 static LIBHANDLE_T libmosek_handle = nullptr;
 
 std::function<const char*(std::int32_t)> get_callback_code_name;
@@ -82,6 +87,8 @@ std::function<ResCode(Task_t,std::int32_t)> append_vars;
 std::function<ResCode(Task_t,std::int32_t,VariableType)> put_var_type;
 std::function<ResCode(Task_t,std::int32_t,std::int32_t,const VariableType*)> put_var_type_slice;
 std::function<ResCode(Task_t,std::int32_t,const std::int32_t*,const VariableType*)> put_var_type_list;
+std::function<ResCode(Task_t,std::int32_t,VariableType[1])> get_var_type;
+std::function<ResCode(Task_t,std::int32_t,std::int32_t,VariableType*)> get_var_type_slice;
 std::function<ResCode(Task_t,std::int32_t,double,double)> put_var_bound;
 std::function<ResCode(Task_t,std::int32_t,std::int32_t,const double*,const double*)> put_var_bound_slice;
 std::function<ResCode(Task_t,std::int32_t,std::int32_t,double,double)> put_var_bound_slice_value;
@@ -118,6 +125,7 @@ std::function<ResCode(Task_t,std::int64_t,std::int64_t*,const double*)> put_row_
 std::function<ResCode(Task_t,std::int32_t,std::int64_t,const std::int64_t*,const double*)> put_col;
 std::function<ResCode(Task_t,std::int32_t,std::int32_t,const std::int64_t*,const std::int64_t*,const double*)> put_col_slice;
 std::function<ResCode(Task_t,std::int32_t,const std::int32_t*,const std::int64_t*,const std::int64_t**,const double**)> put_col_list;
+std::function<ResCode(Task_t,std::int64_t,std::int32_t,double)> put_ijc;
 std::function<ResCode(Task_t,std::int64_t,const std::int64_t*,const std::int32_t*,const double*)> put_ijc_list;
 std::function<ResCode(Task_t,std::int64_t,std::int32_t,std::int64_t,std::int64_t*,double*)> put_bar_entry;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t*,std::int32_t*,std::int64_t*,std::int64_t*,double*)> put_bar_entry_list;
@@ -206,6 +214,16 @@ std::function<std::int32_t(const char*)> get_iinf_index;
 std::function<std::int32_t(const char*)> get_liinf_index;
 std::function<std::int32_t(const char*)> get_dinf_index;
 std::function<std::int32_t(Task_t,const char*,double[1])> get_double_parameter;
+std::function<std::int32_t(const char*)> get_double_parameter_index;
+std::function<const char*(std::int32_t)> get_double_parameter_name;
+std::function<std::int32_t()> get_num_double_parameter;
+std::function<void(Task_t,std::int32_t,double*)> get_all_double_parameters;
+std::function<void(Task_t,std::int32_t,const double*)> put_all_double_parameters;
+std::function<std::int32_t(const char*)> get_int_parameter_index;
+std::function<const char*(std::int32_t)> get_int_parameter_name;
+std::function<std::int32_t()> get_num_int_parameter;
+std::function<void(Task_t,std::int32_t,std::int32_t*)> get_all_int_parameters;
+std::function<void(Task_t,std::int32_t,const std::int32_t*)> put_all_int_parameters;
 std::function<std::int32_t(Task_t,const char*,std::int32_t[1])> get_int_parameter;
 std::function<std::int32_t(Task_t,const char*)> get_parameter_str_len;
 std::function<void(Task_t,const char*,std::int32_t,char*)> get_parameter_str;
@@ -274,7 +292,9 @@ int library_initialized() {
 
 int initialize_library() {
     libmosek_handle = dlopen(libname, RTLD_NOW);
-    if (!libmosek_handle) return 1;
+    if (!libmosek_handle) {
+        return 1;
+    }
 
     if (! loadsym(get_callback_code_name,libmosek_handle,"MSK120_get_callback_code_name")) goto ERROR;
     if (! loadsym(get_resp_name,libmosek_handle,"MSK120_get_resp_name")) goto ERROR;
@@ -306,6 +326,8 @@ int initialize_library() {
     if (! loadsym(put_var_type,libmosek_handle,"MSK120_put_var_type")) goto ERROR;
     if (! loadsym(put_var_type_slice,libmosek_handle,"MSK120_put_var_type_slice")) goto ERROR;
     if (! loadsym(put_var_type_list,libmosek_handle,"MSK120_put_var_type_list")) goto ERROR;
+    if (! loadsym(get_var_type,libmosek_handle,"MSK120_get_var_type")) goto ERROR;
+    if (! loadsym(get_var_type_slice,libmosek_handle,"MSK120_get_var_type_slice")) goto ERROR;
     if (! loadsym(put_var_bound,libmosek_handle,"MSK120_put_var_bound")) goto ERROR;
     if (! loadsym(put_var_bound_slice,libmosek_handle,"MSK120_put_var_bound_slice")) goto ERROR;
     if (! loadsym(put_var_bound_slice_value,libmosek_handle,"MSK120_put_var_bound_slice_value")) goto ERROR;
@@ -342,6 +364,7 @@ int initialize_library() {
     if (! loadsym(put_col,libmosek_handle,"MSK120_put_col")) goto ERROR;
     if (! loadsym(put_col_slice,libmosek_handle,"MSK120_put_col_slice")) goto ERROR;
     if (! loadsym(put_col_list,libmosek_handle,"MSK120_put_col_list")) goto ERROR;
+    if (! loadsym(put_ijc,libmosek_handle,"MSK120_put_ijc")) goto ERROR;
     if (! loadsym(put_ijc_list,libmosek_handle,"MSK120_put_ijc_list")) goto ERROR;
     if (! loadsym(put_bar_entry,libmosek_handle,"MSK120_put_bar_entry")) goto ERROR;
     if (! loadsym(put_bar_entry_list,libmosek_handle,"MSK120_put_bar_entry_list")) goto ERROR;
@@ -430,6 +453,16 @@ int initialize_library() {
     if (! loadsym(get_liinf_index,libmosek_handle,"MSK120_get_liinf_index")) goto ERROR;
     if (! loadsym(get_dinf_index,libmosek_handle,"MSK120_get_dinf_index")) goto ERROR;
     if (! loadsym(get_double_parameter,libmosek_handle,"MSK120_get_double_parameter")) goto ERROR;
+    if (! loadsym(get_double_parameter_index,libmosek_handle,"MSK120_get_double_parameter_index")) goto ERROR;
+    if (! loadsym(get_double_parameter_name,libmosek_handle,"MSK120_get_double_parameter_name")) goto ERROR;
+    if (! loadsym(get_num_double_parameter,libmosek_handle,"MSK120_get_num_double_parameter")) goto ERROR;
+    if (! loadsym(get_all_double_parameters,libmosek_handle,"MSK120_get_all_double_parameters")) goto ERROR;
+    if (! loadsym(put_all_double_parameters,libmosek_handle,"MSK120_put_all_double_parameters")) goto ERROR;
+    if (! loadsym(get_int_parameter_index,libmosek_handle,"MSK120_get_int_parameter_index")) goto ERROR;
+    if (! loadsym(get_int_parameter_name,libmosek_handle,"MSK120_get_int_parameter_name")) goto ERROR;
+    if (! loadsym(get_num_int_parameter,libmosek_handle,"MSK120_get_num_int_parameter")) goto ERROR;
+    if (! loadsym(get_all_int_parameters,libmosek_handle,"MSK120_get_all_int_parameters")) goto ERROR;
+    if (! loadsym(put_all_int_parameters,libmosek_handle,"MSK120_put_all_int_parameters")) goto ERROR;
     if (! loadsym(get_int_parameter,libmosek_handle,"MSK120_get_int_parameter")) goto ERROR;
     if (! loadsym(get_parameter_str_len,libmosek_handle,"MSK120_get_parameter_str_len")) goto ERROR;
     if (! loadsym(get_parameter_str,libmosek_handle,"MSK120_get_parameter_str")) goto ERROR;

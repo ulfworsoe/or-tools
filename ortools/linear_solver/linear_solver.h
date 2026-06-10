@@ -236,6 +236,9 @@ class MPSolver {
     XPRESS_MIXED_INTEGER_PROGRAMMING = 102,
     COPT_LINEAR_PROGRAMMING = 103,
     COPT_MIXED_INTEGER_PROGRAMMING = 104,
+
+    MOSEK_LINEAR_PROGRAMMING = 105,
+    MOSEK_MIXED_INTEGER_PROGRAMMING = 106,
   };
 
   /// Create a solver with the given name and underlying solver backend.
@@ -899,6 +902,7 @@ class MPSolver {
   friend class PdlpInterface;
   friend class HighsInterface;
   friend class KnapsackInterface;
+  friend class MosekInterface;
 
   // Debugging: verify that the given MPVariable* belongs to this solver.
   bool OwnsVariable(const MPVariable* var) const;
@@ -1129,6 +1133,7 @@ class MPObjective {
   friend class PdlpInterface;
   friend class HighsInterface;
   friend class KnapsackInterface;
+  friend class MosekInterface;
 
   // Constructor. An objective points to a single MPSolverInterface
   // that is specified in the constructor. An objective cannot belong
@@ -1244,6 +1249,7 @@ class MPVariable {
   friend class SCIPInterface;
   friend class SLMInterface;
   friend class XpressInterface;
+  friend class MosekInterface;
 
   // Constructor. A variable points to a single MPSolverInterface that
   // is specified in the constructor. A variable cannot belong to
@@ -1392,6 +1398,7 @@ class MPConstraint {
   friend class PdlpInterface;
   friend class HighsInterface;
   friend class KnapsackInterface;
+  friend class MosekInterface;
 
   // Constructor. A constraint points to a single MPSolverInterface
   // that is specified in the constructor. A constraint cannot belong

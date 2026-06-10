@@ -709,11 +709,10 @@ static void delete_task(MSK::Task_t task) { MSK::delete_task(task); }
 
 absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(const ModelProto& model, const InitArgs&)
 {
-    if (! MSK::initialize_library()) {
+    if (0 != MSK::initialize_library()) {
         return absl::InvalidArgumentError("Mosek is not correctly installed.");
     }
     OR_RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
-
 
     if (!model.auxiliary_objectives().empty())
         return ortools::InvalidArgumentErrorBuilder()
