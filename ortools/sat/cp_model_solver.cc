@@ -34,7 +34,6 @@
 #include "absl/container/btree_map.h"
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/flags/flag.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -58,6 +57,7 @@
 #include "ortools/base/types.h"
 #include "ortools/base/version.h"  // IWYU pragma: keep
 #include "ortools/port/proto_utils.h"
+#include "ortools/sat/clause.h"
 #include "ortools/sat/combine_solutions.h"
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_checker.h"
@@ -76,7 +76,6 @@
 #include "ortools/sat/feasibility_pump.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/integer_base.h"
-#include "ortools/sat/linear_model.h"
 #include "ortools/sat/linear_programming_constraint.h"
 #include "ortools/sat/lp_utils.h"
 #include "ortools/sat/lrat_proof_handler.h"
@@ -848,7 +847,9 @@ void LaunchSubsolvers(Model* global_model, SharedClasses* shared,
     subsolvers[i].reset();
   }
 
-  shared->shared_tree_manager->CloseLratProof();
+  if (shared->shared_tree_manager != nullptr) {
+    shared->shared_tree_manager->CloseLratProof();
+  }
   if (shared->response->ProblemIsSolved() &&
       !shared->response->HasFeasibleSolution()) {
     LratMerger(global_model)
@@ -1678,7 +1679,10 @@ class LnsSolver : public SubSolver {
         //
         // TODO(user): This do not work if they are symmetries loaded into SAT.
         // For now we just disable this if there is any symmetry. See for
-        // instance spot5_1401.fzn. Be smarter about that.
+        // instance spot5_1401.fzn. Be smarter about that. We use
+        // !VariablesTouchSymmetries() which is a bit better. Maybe we can use
+        // VariablesSplitSymmetries() but that currently require more work and
+        // in general, we would need to disable the symmetry that we fix here.
         //
         // The issue is that as we fix level zero variables from a partial
         // solution, the symmetry propagator could wrongly fix other variables
@@ -1694,10 +1698,12 @@ class LnsSolver : public SubSolver {
         //
         // TODO(user): We could however fix it in the LNS Helper!
         if (data.status == CpSolverStatus::OPTIMAL &&
-            !shared_->model_proto.has_symmetry() && !solution_values.empty() &&
-            neighborhood.is_simple && shared_->bounds != nullptr &&
+            !solution_values.empty() && neighborhood.is_simple &&
+            shared_->bounds != nullptr &&
             !neighborhood.variables_that_can_be_fixed_to_local_optimum
-                 .empty()) {
+                 .empty() &&
+            !helper_->VariablesTouchSymmetries(
+                neighborhood.variables_that_can_be_fixed_to_local_optimum)) {
           display_lns_info = true;
           shared_->bounds->FixVariablesFromPartialSolution(
               solution_values,
@@ -1950,26 +1956,47 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
   NeighborhoodGeneratorHelper* helper = unique_helper.get();
   subsolvers.push_back(std::move(unique_helper));
 
-  // How many shared tree workers to run?
-  const int num_shared_tree_workers = shared->shared_tree_manager->NumWorkers();
+  // Compute the number of shared tree workers.
+  {
+    SatParameters* mutable_params = global_model->GetOrCreate<SatParameters>();
+    if (shared->model_proto.assumptions().empty()) {
+      int num_shared_tree_workers = params.shared_tree_num_workers();
+      // Set the number of shared tree workers if it was not set.
+      // Note: it has to be done after presolve, as presolve might empty
+      // the objective.
+      if (num_shared_tree_workers == -1) {
+        if (shared->model_proto.has_objective() &&
+            !shared->model_proto.objective().vars().empty()) {
+          // We reserve 16 workers for the main solver, and then we split the
+          // rest between the main solver and the shared tree search.
+          num_shared_tree_workers =
+              std::max((params.num_workers() - 16) / 2, 0);
+        } else {
+          num_shared_tree_workers = std::max((params.num_workers() - 8) / 2, 0);
+        }
+      }
 
-  // Add shared tree workers if asked.
-  if (num_shared_tree_workers >= 2 &&
-      shared->model_proto.assumptions().empty()) {
-    for (const SatParameters& local_params : RepeatParameters(
-             name_filter.Filter({name_to_params.at("shared_tree")}),
-             num_shared_tree_workers)) {
-      full_worker_subsolvers.push_back(std::make_unique<FullProblemSolver>(
-          local_params.name(), local_params,
-          /*split_in_chunks=*/params.interleave_search(), shared));
+      // We need at least 4 workers for the shared tree search to be efficient.
+      if (num_shared_tree_workers >= 4) {
+        SOLVER_LOG(shared->logger, "Setting number of shared tree workers to ",
+                   num_shared_tree_workers);
+        mutable_params->set_shared_tree_num_workers(num_shared_tree_workers);
+        shared->InitSharedTreeManager(global_model);
+      } else {
+        SOLVER_LOG(shared->logger, "Not using shared tree search.");
+        mutable_params->set_shared_tree_num_workers(0);
+      }
+    } else if (params.shared_tree_num_workers() != 0) {
+      mutable_params->set_shared_tree_num_workers(0);
+      SOLVER_LOG(shared->logger,
+                 "Disabling shared tree search for problems with "
+                 "assumptions.");
     }
   }
 
   // Add full problem solvers.
-  for (const SatParameters& local_params : GetFullWorkerParameters(
-           params, shared->model_proto,
-           /*num_already_present=*/full_worker_subsolvers.size(),
-           &name_filter)) {
+  for (const SatParameters& local_params :
+       GetFullWorkerParameters(params, shared->model_proto, &name_filter)) {
     if (!name_filter.Keep(local_params.name())) continue;
 
     // TODO(user): This is currently not supported here.
@@ -2033,9 +2060,8 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
         lns_params_base, lns_params_stalling, helper, shared));
   }
 
-  const bool has_no_overlap =
-      !helper->TypeToConstraints(ConstraintProto::kNoOverlap).empty();
-  const bool has_cumulative =
+  const bool has_no_overlap_or_cumulative =
+      !helper->TypeToConstraints(ConstraintProto::kNoOverlap).empty() ||
       !helper->TypeToConstraints(ConstraintProto::kCumulative).empty();
 
   // Add incomplete subsolvers that require an objective.
@@ -2071,6 +2097,12 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
               helper, name_filter.LastName()),
           lns_params_base, lns_params_stalling, helper, shared));
     }
+    if (name_filter.Keep("lns_small_component")) {
+      reentrant_interleaved_subsolvers.push_back(std::make_unique<LnsSolver>(
+          std::make_unique<SmallComponentNeighborhoodGenerator>(
+              helper, name_filter.LastName()),
+          lns_params_base, lns_params_stalling, helper, shared));
+    }
     if (name_filter.Keep("lns_graph_cst")) {
       reentrant_interleaved_subsolvers.push_back(std::make_unique<LnsSolver>(
           std::make_unique<ConstraintGraphNeighborhoodGenerator>(
@@ -2093,7 +2125,7 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
     }
 
     // Scheduling (no_overlap and cumulative) specific LNS.
-    if (has_no_overlap || has_cumulative) {
+    if (has_no_overlap_or_cumulative) {
       if (name_filter.Keep("lns_scheduling_intervals")) {
         reentrant_interleaved_subsolvers.push_back(std::make_unique<LnsSolver>(
             std::make_unique<RandomIntervalSchedulingNeighborhoodGenerator>(
@@ -2113,12 +2145,6 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
         reentrant_interleaved_subsolvers.push_back(std::make_unique<LnsSolver>(
             std::make_unique<SchedulingResourceWindowsNeighborhoodGenerator>(
                 helper, intervals_in_constraints, name_filter.LastName()),
-            lns_params_base, lns_params_stalling, helper, shared));
-      }
-      if (name_filter.Keep("lns_scheduling_time_window")) {
-        reentrant_interleaved_subsolvers.push_back(std::make_unique<LnsSolver>(
-            std::make_unique<SchedulingTimeWindowNeighborhoodGenerator>(
-                helper, name_filter.LastName()),
             lns_params_base, lns_params_stalling, helper, shared));
       }
     }
@@ -2160,7 +2186,7 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
     }
 
     // Generic scheduling/packing LNS.
-    if (has_no_overlap || has_cumulative || has_no_overlap2d) {
+    if (has_no_overlap_or_cumulative || has_no_overlap2d) {
       if (name_filter.Keep("lns_scheduling_precedences")) {
         reentrant_interleaved_subsolvers.push_back(std::make_unique<LnsSolver>(
             std::make_unique<RandomPrecedenceSchedulingNeighborhoodGenerator>(
@@ -2201,7 +2227,8 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
   //
   // Compared to LNS, these are not re-entrant, so we need to schedule the
   // correct number for parallelism.
-  if (shared->model_proto.has_objective()) {
+  if (shared->model_proto.has_objective() &&
+      !shared->model_proto.objective().vars().empty()) {
     // If not forced by the parameters, we want one LS every 3 threads that
     // work on interleaved stuff. Note that by default they are many LNS, so
     // that shouldn't be too many.
@@ -2245,7 +2272,7 @@ void SolveCpModelParallel(SharedClasses* shared, Model* global_model) {
       }
     }
 
-    if (has_no_overlap) {
+    if (has_no_overlap_or_cumulative && name_filter.Keep("ls_scheduling")) {
       interleaved_subsolvers.push_back(
           std::make_unique<SchedulingLocalSearchSolver>(
               "ls_scheduling", SubSolver::INCOMPLETE, shared->model_proto,

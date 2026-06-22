@@ -15,8 +15,6 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//tools/testing:bintest.bzl", "bintest")
 
-package(default_visibility = ["//visibility:public"])
-
 cc_binary(
     name = "set_cover_cc",
     srcs = ["set_cover.cc"],

@@ -47,6 +47,7 @@
 #include "ortools/graph_base/connected_components.h"
 #include "ortools/port/proto_utils.h"
 #include "ortools/sat/clause.h"
+#include "ortools/sat/continuous_prober.h"
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_checker.h"
 #include "ortools/sat/cp_model_loader.h"
@@ -58,6 +59,7 @@
 #include "ortools/sat/cuts.h"
 #include "ortools/sat/debug_solution.h"
 #include "ortools/sat/feasibility_pump.h"
+#include "ortools/sat/gate_congruence_closure.h"
 #include "ortools/sat/implied_bounds.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/integer_base.h"
@@ -436,10 +438,13 @@ IntegerVariable AddLPConstraints(bool objective_need_to_be_tight,
     ++component_sizes[index_to_component[get_var_index(var)]];
   }
 
+  TimeLimitCheckEveryNCalls time_limit_check(100, m->GetOrCreate<TimeLimit>());
+
   // Dispatch every constraint to its LinearProgrammingConstraint.
   std::vector<LinearProgrammingConstraint*> lp_constraints(num_components,
                                                            nullptr);
   for (int i = 0; i < num_lp_constraints; i++) {
+    if (time_limit_check.LimitReached()) break;
     const int c = index_to_component[get_constraint_index(i)];
     if (component_sizes[c] <= 1) continue;
     if (lp_constraints[c] == nullptr) {
@@ -574,6 +579,7 @@ void RegisterVariableBoundsLevelZeroExport(
   auto* mapping = model->GetOrCreate<CpModelMapping>();
   auto* trail = model->Get<Trail>();
   auto* integer_trail = model->Get<IntegerTrail>();
+  TimeLimit* time_limit = model->GetOrCreate<TimeLimit>();
 
   int saved_trail_index = 0;
   std::vector<int> model_variables;
@@ -584,6 +590,8 @@ void RegisterVariableBoundsLevelZeroExport(
 
   auto broadcast_level_zero_bounds =
       [=](absl::Span<const IntegerVariable> modified_vars) mutable {
+        if (time_limit->LimitReached()) return;
+
         // Inspect the modified IntegerVariables.
         for (const IntegerVariable& var : modified_vars) {
           const IntegerVariable positive_var = PositiveVariable(var);
@@ -974,66 +982,63 @@ int RegisterClausesLevelZeroImport(int id,
   const bool minimize_shared_clauses =
       model->GetOrCreate<SatParameters>()->minimize_shared_clauses();
   auto* clause_manager = model->GetOrCreate<ClauseManager>();
-  const auto& import_level_zero_clauses = [shared_clauses_manager, id, mapping,
-                                           sat_solver, vivifier, implications,
-                                           minimize_shared_clauses,
-                                           clause_stream,
-                                           clause_manager]() mutable {
-    std::vector<std::pair<int, int>> new_binary_clauses;
-    shared_clauses_manager->GetUnseenBinaryClauses(id, &new_binary_clauses);
-    implications->EnableSharing(false);
-    for (const auto& [ref1, ref2] : new_binary_clauses) {
-      const Literal l1 = mapping->Literal(ref1);
-      const Literal l2 = mapping->Literal(ref2);
-      if (!sat_solver->AddProblemClause({l1, l2})) {
-        return false;
-      }
-    }
-    implications->EnableSharing(true);
-    if (clause_stream == nullptr) return true;
-
-    int new_clauses = 0;
-    std::array<Literal, UniqueClauseStream::kMaxClauseSize> local_clause;
-    sat_solver->EnsureNewClauseIndexInitialized();
-    // Temporarily disable clause sharing.
-    auto callback = clause_manager->TakeAddClauseCallback();
-    while (true) {
-      auto batch = shared_clauses_manager->GetUnseenClauses(id);
-      if (batch.empty()) break;
-      for (int clause_index = 0; clause_index < batch.size(); ++clause_index) {
-        const absl::Span<const int>& shared_clause = batch[clause_index];
-        // Check this clause was not already learned by this worker.
-        if (!clause_stream->BlockClause(shared_clause)) continue;
-        ++new_clauses;
-        for (int i = 0; i < shared_clause.size(); ++i) {
-          local_clause[i] = mapping->Literal(shared_clause[i]);
+  const auto& import_level_zero_clauses =
+      [shared_clauses_manager, id, mapping, sat_solver, vivifier, implications,
+       minimize_shared_clauses, clause_stream, clause_manager]() mutable {
+        std::vector<std::pair<int, int>> new_binary_clauses;
+        shared_clauses_manager->GetUnseenBinaryClauses(id, &new_binary_clauses);
+        implications->EnableSharing(false);
+        for (const auto& [ref1, ref2] : new_binary_clauses) {
+          const Literal l1 = mapping->Literal(ref1);
+          const Literal l2 = mapping->Literal(ref2);
+          if (!sat_solver->AddProblemClause({l1, l2})) {
+            return false;
+          }
         }
-        if (!sat_solver->AddProblemClause(
-                absl::MakeSpan(local_clause)
-                    .subspan(0, shared_clause.size()))) {
-          return false;
-        }
-      }
-    }
-    clause_manager->SetAddClauseCallback(std::move(callback));
-    if (new_clauses > 0) {
-      shared_clauses_manager->NotifyNumImported(id, new_clauses);
-    }
+        implications->EnableSharing(true);
+        if (clause_stream == nullptr) return true;
 
-    if (new_clauses > 0 && !sat_solver->FinishPropagation()) return false;
-    if (minimize_shared_clauses && new_clauses > 0) {
-      // The new clauses may be subsumed, so try to minimize them to reduce
-      // overhead of sharing.
-      // We only share up to 1024 literals worth of new clauses per second, so
-      // at most 1024 decisions to vivify all new clauses, so this should be
-      // relatively cheap, *if* regular vivification is keeping up with new
-      // clauses. Use a tight dtime limit in case it isn't.
-      return vivifier->MinimizeByPropagation(
-          /*log_info=*/false, /*dtime_budget=*/0.01,
-          /*minimize_new_clauses_only=*/true);
-    }
-    return true;
-  };
+        int new_clauses = 0;
+        std::array<Literal, UniqueClauseStream::kMaxClauseSize> local_clause;
+        sat_solver->EnsureNewClauseIndexInitialized();
+        // Temporarily disable clause sharing.
+        auto callback = clause_manager->TakeAddClauseCallback();
+        while (true) {
+          auto batch = shared_clauses_manager->GetUnseenClauses(id);
+          if (batch.empty()) break;
+          for (const absl::Span<const int> shared_clause : batch) {
+            // Check this clause was not already learned by this worker.
+            if (!clause_stream->BlockClause(shared_clause)) continue;
+            ++new_clauses;
+            for (int i = 0; i < shared_clause.size(); ++i) {
+              local_clause[i] = mapping->Literal(shared_clause[i]);
+            }
+            if (!sat_solver->AddProblemClause(
+                    absl::MakeSpan(local_clause)
+                        .subspan(0, shared_clause.size()))) {
+              return false;
+            }
+          }
+        }
+        clause_manager->SetAddClauseCallback(std::move(callback));
+        if (new_clauses > 0) {
+          shared_clauses_manager->NotifyNumImported(id, new_clauses);
+        }
+
+        if (new_clauses > 0 && !sat_solver->FinishPropagation()) return false;
+        if (minimize_shared_clauses && new_clauses > 0) {
+          // The new clauses may be subsumed, so try to minimize them to reduce
+          // overhead of sharing.
+          // We only share up to 1024 literals worth of new clauses per second,
+          // so at most 1024 decisions to vivify all new clauses, so this should
+          // be relatively cheap, *if* regular vivification is keeping up with
+          // new clauses. Use a tight dtime limit in case it isn't.
+          return vivifier->MinimizeByPropagation(
+              /*log_info=*/false, /*dtime_budget=*/0.01,
+              /*minimize_new_clauses_only=*/true);
+        }
+        return true;
+      };
   model->GetOrCreate<LevelZeroCallbackHelper>()->callbacks.push_back(
       import_level_zero_clauses);
   return id;
@@ -2140,21 +2145,6 @@ void AdaptGlobalParameters(const CpModelProto& model_proto, Model* model) {
     params->set_num_workers(num_cores);
   }
 
-  if (params->shared_tree_num_workers() == -1) {
-    int num_shared_tree_workers = 0;
-    if (model_proto.has_objective() ||
-        model_proto.has_floating_point_objective()) {
-      num_shared_tree_workers = (params->num_workers() - 16) / 2;
-    } else {
-      num_shared_tree_workers = (params->num_workers() - 8) * 3 / 4;
-    }
-    if (num_shared_tree_workers > 4) {
-      SOLVER_LOG(logger, "Setting number of shared tree workers to ",
-                 num_shared_tree_workers);
-      params->set_shared_tree_num_workers(num_shared_tree_workers);
-    }
-  }
-
   // We currently only use the feasibility pump or rins/rens if it is enabled
   // and some other parameters are not on.
   //
@@ -2187,7 +2177,6 @@ SharedClasses::SharedClasses(const CpModelProto* proto, Model* global_model)
       stats(global_model->GetOrCreate<SharedStatistics>()),
       stat_tables(global_model->GetOrCreate<SharedStatTables>()),
       response(global_model->GetOrCreate<SharedResponseManager>()),
-      shared_tree_manager(global_model->GetOrCreate<SharedTreeManager>()),
       ls_hints(global_model->GetOrCreate<SharedLsSolutionRepository>()),
       progress_logger(global_model->GetOrCreate<SolverProgressLogger>()),
       lrat_proof_status(global_model->GetOrCreate<SharedLratProofStatus>()) {
@@ -2228,11 +2217,18 @@ SharedClasses::SharedClasses(const CpModelProto* proto, Model* global_model)
   }
 }
 
+void SharedClasses::InitSharedTreeManager(Model* model) {
+  CHECK(shared_tree_manager == nullptr);
+  shared_tree_manager = std::make_unique<SharedTreeManager>(model);
+}
+
 void SharedClasses::RegisterSharedClassesInLocalModel(Model* local_model) {
   // Note that we do not register the logger which is not a shared class.
   local_model->Register<SharedResponseManager>(response);
   local_model->Register<SharedLsSolutionRepository>(ls_hints);
-  local_model->Register<SharedTreeManager>(shared_tree_manager);
+  if (shared_tree_manager != nullptr) {
+    local_model->Register<SharedTreeManager>(shared_tree_manager.get());
+  }
   local_model->Register<SharedStatistics>(stats);
   local_model->Register<SharedStatTables>(stat_tables);
   local_model->Register<SharedLratProofStatus>(lrat_proof_status);

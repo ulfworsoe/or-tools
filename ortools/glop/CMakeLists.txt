@@ -13,6 +13,8 @@
 
 file(GLOB _SRCS "*.h" "*.cc")
 list(FILTER _SRCS EXCLUDE REGEX ".*/.*_test.cc")
+list(FILTER _SRCS EXCLUDE REGEX ".*/preprocessor_testing.cc")
+list(FILTER _SRCS EXCLUDE REGEX ".*/preprocessor_testing.h")
 set(NAME ${PROJECT_NAME}_glop)
 
 # Will be merge in libortools.so
@@ -32,7 +34,7 @@ target_link_libraries(${NAME} PRIVATE
   ${PROJECT_NAMESPACE}::ortools_proto)
 #add_library(${PROJECT_NAMESPACE}::glop ALIAS ${NAME})
 
-if(BUILD_TESTING)
+if(BUILD_CXX_TESTING)
   # Test
   file(GLOB _TEST_SRCS "*_test.cc")
   foreach(_FULL_FILE_NAME IN LISTS _TEST_SRCS)
