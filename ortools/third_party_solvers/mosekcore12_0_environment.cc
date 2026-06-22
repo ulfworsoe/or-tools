@@ -1,7 +1,6 @@
 /* Generated interface for MOSEK Core API 12.0. */
 
 #include "mosekcore12_0_environment.h"
-#include<iostream>
 
 
 /* NOTES on compiling and linking:
@@ -48,9 +47,8 @@ namespace MSK120 {
 template<class F>
 bool loadsym(std::function<F> & target, LIBHANDLE_T h, const char * symname) {
     void * addr = LOADSYM(h,symname);
-    if (! addr) {
+    if (! addr)
         return false;
-    }
     target = (F*)addr;
     return true;
 }
@@ -99,6 +97,7 @@ std::function<ResCode(Task_t,std::int32_t)> append_barvar;
 std::function<ResCode(Task_t,std::int32_t,const std::int32_t*)> append_barvars;
 std::function<ResCode(Task_t,std::int32_t,std::int32_t[1])> get_dim_barvar;
 std::function<ResCode(Task_t,std::int32_t,std::int32_t,std::int32_t*)> get_dim_barvars;
+std::function<ResCode(Task_t,DomainType,std::int64_t,std::int32_t,double*,std::int64_t[1])> get_domain;
 std::function<ResCode(Task_t,std::int64_t[1])> get_domain_empty;
 std::function<ResCode(Task_t,std::int64_t[1])> get_domain_rzero;
 std::function<ResCode(Task_t,std::int64_t[1])> get_domain_rplus;
@@ -112,7 +111,7 @@ std::function<ResCode(Task_t,std::int64_t,std::int64_t,const double[1],std::int6
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,const double[1],std::int64_t[1])> get_domain_dual_power_cone;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_primal_geometric_mean_cone;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_dual_geometric_mean_cone;
-std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_svec_cone;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t[1])> get_domain_svecpsd_cone;
 std::function<ResCode(Task_t,std::int64_t,DomainType[1],std::int64_t[1],std::int32_t[1])> get_domain_info;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,double*)> get_domain_alpha;
 std::function<ResCode(Task_t,std::int64_t)> append_rows;
@@ -135,12 +134,13 @@ std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t*)> get_row_s
 std::function<ResCode(Task_t,std::int64_t,std::int32_t,std::int32_t*,double*)> get_row;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int32_t*,std::int32_t*,double*)> get_row_slice;
 std::function<ResCode(Task_t,std::int32_t,std::int64_t,const std::int32_t*,const std::int32_t*,const double*)> append_symmat;
-std::function<ResCode(Task_t,std::int64_t,std::int32_t*,std::int64_t*,const std::int32_t*,const std::int32_t*,const double*)> append_symmats;
+std::function<ResCode(Task_t,std::int64_t,const std::int32_t*,const std::int64_t*,const std::int32_t*,const std::int32_t*,const double*)> append_symmats;
 std::function<ResCode(Task_t,std::int64_t,std::int32_t[1],std::int64_t[1])> get_symmat_info;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int32_t*,std::int32_t*,double*)> get_symmat;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int32_t*,std::int64_t*)> get_symmat_slice_info;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int32_t*,std::int32_t*,double*)> get_symmat_slice;
 std::function<ResCode(Task_t,std::int64_t)> append_empty_cons;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,const std::int64_t*,const double*)> append_con;
 std::function<ResCode(Task_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*)> append_cons;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const double*)> put_con;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,double)> put_scalar_con;
@@ -149,6 +149,7 @@ std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t*)> get_con_s
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t[1])> get_con_slice_num_row;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t*,double*,std::int64_t*)> get_con_slice;
 std::function<ResCode(Task_t,std::int64_t)> append_empty_djcs;
+std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*)> append_djc;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*)> put_djc;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,std::int64_t,const std::int64_t*,const std::int64_t*,const std::int64_t*,const double*,const std::int64_t*)> put_djc_slice;
 std::function<ResCode(Task_t,std::int64_t,std::int64_t[1],std::int64_t[1],std::int64_t[1])> get_djc_info;
@@ -292,9 +293,7 @@ int library_initialized() {
 
 int initialize_library() {
     libmosek_handle = dlopen(libname, RTLD_NOW);
-    if (!libmosek_handle) {
-        return 1;
-    }
+    if (!libmosek_handle) return 1;
 
     if (! loadsym(get_callback_code_name,libmosek_handle,"MSK120_get_callback_code_name")) goto ERROR;
     if (! loadsym(get_resp_name,libmosek_handle,"MSK120_get_resp_name")) goto ERROR;
@@ -338,6 +337,7 @@ int initialize_library() {
     if (! loadsym(append_barvars,libmosek_handle,"MSK120_append_barvars")) goto ERROR;
     if (! loadsym(get_dim_barvar,libmosek_handle,"MSK120_get_dim_barvar")) goto ERROR;
     if (! loadsym(get_dim_barvars,libmosek_handle,"MSK120_get_dim_barvars")) goto ERROR;
+    if (! loadsym(get_domain,libmosek_handle,"MSK120_get_domain")) goto ERROR;
     if (! loadsym(get_domain_empty,libmosek_handle,"MSK120_get_domain_empty")) goto ERROR;
     if (! loadsym(get_domain_rzero,libmosek_handle,"MSK120_get_domain_rzero")) goto ERROR;
     if (! loadsym(get_domain_rplus,libmosek_handle,"MSK120_get_domain_rplus")) goto ERROR;
@@ -351,7 +351,7 @@ int initialize_library() {
     if (! loadsym(get_domain_dual_power_cone,libmosek_handle,"MSK120_get_domain_dual_power_cone")) goto ERROR;
     if (! loadsym(get_domain_primal_geometric_mean_cone,libmosek_handle,"MSK120_get_domain_primal_geometric_mean_cone")) goto ERROR;
     if (! loadsym(get_domain_dual_geometric_mean_cone,libmosek_handle,"MSK120_get_domain_dual_geometric_mean_cone")) goto ERROR;
-    if (! loadsym(get_domain_svec_cone,libmosek_handle,"MSK120_get_domain_svec_cone")) goto ERROR;
+    if (! loadsym(get_domain_svecpsd_cone,libmosek_handle,"MSK120_get_domain_svecpsd_cone")) goto ERROR;
     if (! loadsym(get_domain_info,libmosek_handle,"MSK120_get_domain_info")) goto ERROR;
     if (! loadsym(get_domain_alpha,libmosek_handle,"MSK120_get_domain_alpha")) goto ERROR;
     if (! loadsym(append_rows,libmosek_handle,"MSK120_append_rows")) goto ERROR;
@@ -380,6 +380,7 @@ int initialize_library() {
     if (! loadsym(get_symmat_slice_info,libmosek_handle,"MSK120_get_symmat_slice_info")) goto ERROR;
     if (! loadsym(get_symmat_slice,libmosek_handle,"MSK120_get_symmat_slice")) goto ERROR;
     if (! loadsym(append_empty_cons,libmosek_handle,"MSK120_append_empty_cons")) goto ERROR;
+    if (! loadsym(append_con,libmosek_handle,"MSK120_append_con")) goto ERROR;
     if (! loadsym(append_cons,libmosek_handle,"MSK120_append_cons")) goto ERROR;
     if (! loadsym(put_con,libmosek_handle,"MSK120_put_con")) goto ERROR;
     if (! loadsym(put_scalar_con,libmosek_handle,"MSK120_put_scalar_con")) goto ERROR;
@@ -388,6 +389,7 @@ int initialize_library() {
     if (! loadsym(get_con_slice_num_row,libmosek_handle,"MSK120_get_con_slice_num_row")) goto ERROR;
     if (! loadsym(get_con_slice,libmosek_handle,"MSK120_get_con_slice")) goto ERROR;
     if (! loadsym(append_empty_djcs,libmosek_handle,"MSK120_append_empty_djcs")) goto ERROR;
+    if (! loadsym(append_djc,libmosek_handle,"MSK120_append_djc")) goto ERROR;
     if (! loadsym(put_djc,libmosek_handle,"MSK120_put_djc")) goto ERROR;
     if (! loadsym(put_djc_slice,libmosek_handle,"MSK120_put_djc_slice")) goto ERROR;
     if (! loadsym(get_djc_info,libmosek_handle,"MSK120_get_djc_info")) goto ERROR;
