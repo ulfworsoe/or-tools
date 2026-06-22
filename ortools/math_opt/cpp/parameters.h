@@ -115,6 +115,12 @@ enum class SolverType {
   // Supports LP, MIP, and nonconvex integer quadratic problems.
   // A fast option, but has special licensing.
   kXpress = SOLVER_TYPE_XPRESS,
+
+  // MOSEK solver (third party).
+  //
+  // Supports LP, MIP, and quadratic cones problems.
+  // Requires a license.
+  kMosek = SOLVER_TYPE_MOSEK,
 };
 
 MATH_OPT_DEFINE_ENUM(SolverType, SOLVER_TYPE_UNSPECIFIED);
