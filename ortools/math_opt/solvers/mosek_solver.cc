@@ -19,8 +19,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <ios>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -77,7 +79,7 @@ absl::Status MosekSolver::AddVariables(const VariablesProto& vars) {
     {
         int j = first_var;
         for (const auto &i : vars.ids()) {
-            variable_map[i] = ++j;
+            variable_map[i] = j++;
         }
     }
 
@@ -285,33 +287,27 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons) {
 absl::Status MosekSolver::AddIndicatorConstraints(
     const ::google::protobuf::Map<int64_t, IndicatorConstraintProto>& cons)
 {
-    // Implementers notes:
-    //
+    if (cons.size() == 0)
+        return absl::OkStatus();
     // Implemented as a DJC:
     //     ind = 0
     //   OR
     //     ind  = 1
     //     expr > lb // included if lb is finite
     //     expr < ub // included if ub is finite
-    //
-    // IndicatorConstraintProto::indicator_id: ID is a existing variable that MUST be binary (i.e integer and with bound [0,1]).
-    // IndicatorConstraintProto::active_on_zero: Negatex the indicator, so it must hold on 0 instead of on 1.
-    // IndicatorConstraintProto::lower_bound
-    // IndicatorConstraintProto::uppre_bound
-    // IndicatorConstraintProto::name
-    // IndicatorConstraintProto::expression: Sparse matrix
     int64_t first_djc = MSK::get_num_djc(task);
     int64_t first_row = MSK::get_num_row(task);
 
+
     int64_t
         // Number of added AFE rows
-        nrow = 0,
+        nrow    = cons.size(),
         // Number of nonzeros in all expressions
-        nnz = 0,
+        nnz     = 0,
         // Number of rows in total in the DJCs.
         ndjcrow = 0;
     for (const auto& [id, con] : cons) {
-        ++nrow;
+        //++nrow;
         nnz += con.expression().ids_size();
         ndjcrow += 2;
         if (std::isfinite(con.lower_bound())) { ++ndjcrow; }
@@ -736,6 +732,8 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(const ModelPro
     std::unique_ptr<MSK::Task_s,Task_deleter> task(task_ptr,&delete_task);
     std::unique_ptr<MosekSolver> mskslv(new MosekSolver(std::move(task)));
     MSK::put_task_name(mskslv->task,model.name().c_str());
+    MSK::append_rows(mskslv->task,1);
+    MSK::put_objective_row(mskslv->task,0);
     OR_RETURN_IF_ERROR(mskslv->AddVariables(model.variables()));
     OR_RETURN_IF_ERROR(mskslv->ReplaceObjective(model.objective()));
     OR_RETURN_IF_ERROR(mskslv->AddConstraints(model.linear_constraints(),
@@ -771,7 +769,7 @@ absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(
             {
                 double pobj;
                 int32_t numvar = MSK::get_num_var(task);
-                std::vector<double> xx(0.0, numvar);
+                std::vector<double> xx(numvar);
                 if (MSK::RES_OK != MSK::get_primal_obj(task,sol_index,&pobj) ||
                     MSK::RES_OK != MSK::get_solution_xx_slice(task,sol_index,0,numvar,xx.data()))
                 {
@@ -1171,6 +1169,10 @@ static int info_cb(
     return 0;
 }
 
+static void msgprn(void * h, const char * msg) {
+    fputs(msg, stderr);
+}
+
 absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     const SolveParametersProto& parameters,  // solver settings
     const ModelSolveParametersProto& model_parameters,
@@ -1359,6 +1361,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         });
 
         MSK::TrmCode trm;
+        MSK::put_stream_callback(task,MSK::StreamType::LOG,nullptr,msgprn);
         if (cb) {
             bool terminate;
             std::tuple<Callback&,std::vector<int64_t>&,absl::flat_hash_map<int64_t, int32_t>&,bool,bool&> handle(cb,ordered_xx_ids,variable_map,skip_xx_zeros,terminate);
@@ -1396,11 +1399,13 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     TerminationProto trmp;
     MSK::ProSta prosta;
     MSK::SolSta psolsta,dsolsta;
+    bool ismax = MSK::get_objective_sense(task) == MSK::ObjSense::MAXIMIZE;
     if (!soldef) {
-        auto [msg, name, code] = last_error();
+        //auto [msg, name, code] = last_error();
         trmp = TerminateForReason(
-            MSK::get_objective_sense(task) == MSK::ObjSense::MAXIMIZE,
-            TerminationReasonProto::TERMINATION_REASON_NO_SOLUTION_FOUND, msg);
+            ismax,
+            TerminationReasonProto::TERMINATION_REASON_NO_SOLUTION_FOUND, "No solution found");
+        trmp.set_limit(LimitProto::LIMIT_UNSPECIFIED);
     }
     else if (MSK::RES_OK != MSK::get_problem_status(task,sol_index,&prosta) ||
              MSK::RES_OK != MSK::get_solution_status(task,sol_index,&psolsta,&dsolsta))
@@ -1411,12 +1416,13 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         // Attempt to determine TerminationProto from Mosek Termination code,
         // problem status and solution status.
 
-        bool ismax = MSK::get_objective_sense(task) == MSK::ObjSense::MAXIMIZE;
         if (psolsta == MSK::SolSta::INTEGER_OPTIMAL) {
             double pobj;
-            if (MSK::RES_OK != MSK::get_primal_obj(task,sol_index,&pobj))
+            if (MSK::RES_OK != MSK::get_primal_obj(task,sol_index,&pobj)) {
                 return absl::InternalError("Failed to extract solution data");
+            }
             trmp = OptimalTerminationProto(pobj,0.0,"");
+            //trmp.set_limit(LimitProto::LIMIT_SOLUTION);
         }
         else if (psolsta == MSK::SolSta::OPTIMAL &&
                  dsolsta == MSK::SolSta::OPTIMAL) {
@@ -1426,6 +1432,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
                 return absl::InternalError("Optimization failedcode");
             trmp = OptimalTerminationProto(pobj,dobj, "");
         } else if (dsolsta == MSK::SolSta::INFEAS_CERT) {
+
             trmp = InfeasibleTerminationProto(
                 ismax,
                 FeasibilityStatusProto::FEASIBILITY_STATUS_FEASIBLE);
