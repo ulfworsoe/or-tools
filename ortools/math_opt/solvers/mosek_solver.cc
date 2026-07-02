@@ -125,7 +125,7 @@ absl::Status MosekSolver::AddVariables(const VariablesProto& vars) {
 
 absl::Status MosekSolver::ReplaceObjective(const ObjectiveProto& obj) {
     MSK::put_obj_name(task,obj.name().c_str());
-    MSK::put_objective_sense(task,obj.maximize() ? MSK::ObjSense::MAXIMIZE : MSK::ObjSense::MINIMIZE);
+    MSK::put_obj_sense(task,obj.maximize() ? MSK::ObjSense::MAXIMIZE : MSK::ObjSense::MINIMIZE);
     auto objcof = obj.linear_coefficients();
 
     MSK::put_row_g(task,0,obj.offset());
@@ -654,7 +654,7 @@ absl::Status MosekSolver::UpdateObjective(const ObjectiveUpdatesProto& objupds)
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
     }
 
-    MSK::put_objective_sense(task,objupds.direction_update() ? MSK::ObjSense::MAXIMIZE : MSK::ObjSense::MINIMIZE);
+    MSK::put_obj_sense(task,objupds.direction_update() ? MSK::ObjSense::MAXIMIZE : MSK::ObjSense::MINIMIZE);
 
     return absl::OkStatus();
 }
@@ -754,7 +754,7 @@ absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(
     bool skip_zero_values)
 {
     MSK::SolSta psta,dsta;
-    if (MSK::RES_OK != MSK::get_solution_status(task,sol_index,&psta,&dsta))
+    if (MSK::RES_OK != MSK::get_sol_status(task,sol_index,&psta,&dsta))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -771,7 +771,7 @@ absl::StatusOr<PrimalSolutionProto> MosekSolver::PrimalSolution(
                 int32_t numvar = MSK::get_num_var(task);
                 std::vector<double> xx(numvar);
                 if (MSK::RES_OK != MSK::get_primal_obj(task,sol_index,&pobj) ||
-                    MSK::RES_OK != MSK::get_solution_xx_slice(task,sol_index,0,numvar,xx.data()))
+                    MSK::RES_OK != MSK::get_sol_xx_slice(task,sol_index,0,numvar,xx.data()))
                 {
                     auto [rname,rdesc,msg] = std::move(last_error());
                     return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -821,8 +821,8 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(
                 if (MSK::RES_OK != MSK::get_con_slice_num_row(task,0,numcon,&numconrow) ||
                     MSK::RES_OK != MSK::get_dual_obj(task,sol_index,&dobj) ||
                     //MSK::RES_OK != MSK::get_solution_y_slice(task,sol_index,0,numcon,numconrow,y.data()) ||
-                    MSK::RES_OK != MSK::get_solution_slx_slice(task,sol_index,0,numvar,slx.data()) ||
-                    MSK::RES_OK != MSK::get_solution_sux_slice(task,sol_index,0,numvar,sux.data()))
+                    MSK::RES_OK != MSK::get_sol_slx_slice(task,sol_index,0,numvar,slx.data()) ||
+                    MSK::RES_OK != MSK::get_sol_sux_slice(task,sol_index,0,numvar,sux.data()))
                 {
                     auto [rname,rdesc,msg] = std::move(last_error());
                     return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -847,8 +847,8 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(
                     double slc,suc;
                     for (auto k : ordered_y_ids) {
                         auto [con_lo,con_up,rowi] = linconstr_map[k];
-                        if (MSK::RES_OK != MSK::get_solution_y_slice(task,sol_index,con_lo,con_lo+1,1,&slc) ||
-                            MSK::RES_OK != MSK::get_solution_y_slice(task,sol_index,con_up,con_up+1,1,&suc))
+                        if (MSK::RES_OK != MSK::get_sol_y_slice(task,sol_index,con_lo,con_lo+1,1,&slc) ||
+                            MSK::RES_OK != MSK::get_sol_y_slice(task,sol_index,con_up,con_up+1,1,&suc))
                         {
                             auto [rname,rdesc,msg] = std::move(last_error());
                             return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -894,7 +894,7 @@ absl::StatusOr<SolutionProto> MosekSolver::Solution(
     }
 
     MSK::SolType soltp;
-    if (MSK::RES_OK != MSK::get_solution_type(task,sol_index,&soltp))
+    if (MSK::RES_OK != MSK::get_sol_type(task,sol_index,&soltp))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -912,9 +912,9 @@ absl::StatusOr<SolutionProto> MosekSolver::Solution(
         std::vector<int32_t> xup_binding(numvar);
         MSK::SolSta psta,dsta;
 
-        if (MSK::RES_OK != MSK::get_solution_sta_x_slice(task,sol_index,0,numvar,xlo_binding.data(),xup_binding.data()) ||
-            MSK::RES_OK != MSK::get_solution_basic_x_slice(task,sol_index,0,numvar,x_basic.data()) ||
-            MSK::RES_OK != MSK::get_solution_status(task,sol_index,&psta,&dsta))
+        if (MSK::RES_OK != MSK::get_sol_sta_x_slice(task,sol_index,0,numvar,xlo_binding.data(),xup_binding.data()) ||
+            MSK::RES_OK != MSK::get_sol_basic_x_slice(task,sol_index,0,numvar,x_basic.data()) ||
+            MSK::RES_OK != MSK::get_sol_status(task,sol_index,&psta,&dsta))
         {
             auto [rname,rdesc,msg] = std::move(last_error());
             return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -938,10 +938,10 @@ absl::StatusOr<SolutionProto> MosekSolver::Solution(
             csta.add_ids(k);
             int32_t l_basic,u_basic,l_binding,u_binding;
 
-            if (MSK::RES_OK != MSK::get_solution_sta_con(task,sol_index,con_lo,&l_binding) ||
-                MSK::RES_OK != MSK::get_solution_sta_con(task,sol_index,con_up,&u_binding) ||
-                MSK::RES_OK != MSK::get_solution_basic_con(task,sol_index,con_lo,&l_basic) ||
-                MSK::RES_OK != MSK::get_solution_basic_con(task,sol_index,con_lo,&l_basic))
+            if (MSK::RES_OK != MSK::get_sol_sta_con(task,sol_index,con_lo,&l_binding) ||
+                MSK::RES_OK != MSK::get_sol_sta_con(task,sol_index,con_up,&u_binding) ||
+                MSK::RES_OK != MSK::get_sol_basic_con(task,sol_index,con_lo,&l_basic) ||
+                MSK::RES_OK != MSK::get_sol_basic_con(task,sol_index,con_lo,&l_basic))
             {
                 auto [rname,rdesc,msg] = std::move(last_error());
                 return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -980,7 +980,7 @@ absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(
     MSK::SolSta psta,dsta;
     int32_t numvar = MSK::get_num_var(task);
 
-    if (MSK::RES_OK != MSK::get_solution_status(task,sol_index,&psta,&dsta))
+    if (MSK::RES_OK != MSK::get_sol_status(task,sol_index,&psta,&dsta))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -990,7 +990,7 @@ absl::StatusOr<PrimalRayProto> MosekSolver::PrimalRay(
         return absl::NotFoundError("Certificate not available");
 
     std::vector<double> xx(numvar);
-    if (MSK::RES_OK != MSK::get_solution_xx_slice(task,sol_index,0,numvar,xx.data()))
+    if (MSK::RES_OK != MSK::get_sol_xx_slice(task,sol_index,0,numvar,xx.data()))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -1018,7 +1018,7 @@ absl::StatusOr<DualRayProto> MosekSolver::DualRay(
     MSK::SolSta psta,dsta;
     int32_t numvar = MSK::get_num_var(task);
 
-    if (MSK::RES_OK != MSK::get_solution_status(task,sol_index,&psta,&dsta))
+    if (MSK::RES_OK != MSK::get_sol_status(task,sol_index,&psta,&dsta))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -1028,8 +1028,8 @@ absl::StatusOr<DualRayProto> MosekSolver::DualRay(
         return absl::NotFoundError("Certificate not available");
 
     std::vector<double> slx(numvar), sux(numvar);
-    if (MSK::RES_OK != MSK::get_solution_slx_slice(task,sol_index,0,numvar,slx.data()) ||
-        MSK::RES_OK != MSK::get_solution_sux_slice(task,sol_index,0,numvar,sux.data()))
+    if (MSK::RES_OK != MSK::get_sol_slx_slice(task,sol_index,0,numvar,slx.data()) ||
+        MSK::RES_OK != MSK::get_sol_sux_slice(task,sol_index,0,numvar,sux.data()))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -1050,8 +1050,8 @@ absl::StatusOr<DualRayProto> MosekSolver::DualRay(
     for (auto& k : ordered_y_ids) {
         auto [con_lo,con_up,rowi] = linconstr_map[k];
         double sl,su;
-        if (MSK::RES_OK != MSK::get_solution_y_slice(task,sol_index,con_lo,1,1,&sl) ||
-            MSK::RES_OK != MSK::get_solution_y_slice(task,sol_index,con_up,1,1,&su))
+        if (MSK::RES_OK != MSK::get_sol_y_slice(task,sol_index,con_lo,1,1,&sl) ||
+            MSK::RES_OK != MSK::get_sol_y_slice(task,sol_index,con_up,1,1,&su))
         {
             auto [rname,rdesc,msg] = std::move(last_error());
             return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -1204,29 +1204,29 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     // - EmphasisProto scaling
 
     // Stash all parameters to be restored after optimization
-    double dpar_optimizer_max_time;    MSK::get_double_parameter(task,"dpar_optimizer_max_time",&dpar_optimizer_max_time);
-    int    ipar_intpnt_max_iterations; MSK::get_int_parameter(task,"ipar_intpnt_max_iterations",&ipar_intpnt_max_iterations);
-    int    ipar_sim_max_iterations;    MSK::get_int_parameter(task,"ipar_sim_max_iterations",&ipar_sim_max_iterations);
-    double dpar_upper_obj_cut;         MSK::get_double_parameter(task,"dpar_upper_obj_cut",&dpar_upper_obj_cut);
-    double dpar_lower_obj_cut;         MSK::get_double_parameter(task,"dpar_lower_obj_cut",&dpar_lower_obj_cut);
-    int    ipar_num_threads;           MSK::get_int_parameter(task,"ipar_num_threads",&ipar_num_threads);
-    double dpar_mio_tol_abs_gap;       MSK::get_double_parameter(task,"dpar_mio_tol_abs_gap",&dpar_mio_tol_abs_gap);
-    double dpar_mio_tol_rel_gap;       MSK::get_double_parameter(task,"dpar_mio_tol_rel_gap",&dpar_mio_tol_rel_gap);
-    double dpar_intpnt_tol_rel_gap;    MSK::get_double_parameter(task,"dpar_intpnt_tol_rel_gap",&dpar_intpnt_tol_rel_gap);
-    double dpar_intpnt_co_tol_rel_gap; MSK::get_double_parameter(task,"dpar_intpnt_co_tol_rel_gap",&dpar_intpnt_co_tol_rel_gap);
-    int    ipar_optimizer;             MSK::get_int_parameter(task,"ipar_optimizer",&ipar_optimizer);
+    double dpar_optimizer_max_time;    MSK::get_double_param(task,"dpar_optimizer_max_time",&dpar_optimizer_max_time);
+    int    ipar_intpnt_max_iterations; MSK::get_int_param(task,"ipar_intpnt_max_iterations",&ipar_intpnt_max_iterations);
+    int    ipar_sim_max_iterations;    MSK::get_int_param(task,"ipar_sim_max_iterations",&ipar_sim_max_iterations);
+    double dpar_upper_obj_cut;         MSK::get_double_param(task,"dpar_upper_obj_cut",&dpar_upper_obj_cut);
+    double dpar_lower_obj_cut;         MSK::get_double_param(task,"dpar_lower_obj_cut",&dpar_lower_obj_cut);
+    int    ipar_num_threads;           MSK::get_int_param(task,"ipar_num_threads",&ipar_num_threads);
+    double dpar_mio_tol_abs_gap;       MSK::get_double_param(task,"dpar_mio_tol_abs_gap",&dpar_mio_tol_abs_gap);
+    double dpar_mio_tol_rel_gap;       MSK::get_double_param(task,"dpar_mio_tol_rel_gap",&dpar_mio_tol_rel_gap);
+    double dpar_intpnt_tol_rel_gap;    MSK::get_double_param(task,"dpar_intpnt_tol_rel_gap",&dpar_intpnt_tol_rel_gap);
+    double dpar_intpnt_co_tol_rel_gap; MSK::get_double_param(task,"dpar_intpnt_co_tol_rel_gap",&dpar_intpnt_co_tol_rel_gap);
+    int    ipar_optimizer;             MSK::get_int_param(task,"ipar_optimizer",&ipar_optimizer);
 
     auto _guard_reset_params = absl::MakeCleanup([&]() {
-        MSK::put_double_parameter(task,"dpar_optimizer_max_time", dpar_optimizer_max_time);
-        MSK::put_int_parameter(task,"ipar_intpnt_max_iterations", ipar_intpnt_max_iterations);
-        MSK::put_int_parameter(task,"ipar_sim_max_iterations", ipar_sim_max_iterations);
-        MSK::put_double_parameter(task,"dpar_upper_obj_cut", dpar_upper_obj_cut);
-        MSK::put_double_parameter(task,"dpar_lower_obj_cut", dpar_lower_obj_cut);
-        MSK::put_int_parameter(task,"ipar_num_threads", ipar_num_threads);
-        MSK::put_double_parameter(task,"dpar_mio_tol_abs_gap", dpar_mio_tol_abs_gap);
-        MSK::put_double_parameter(task,"dpar_mio_tol_rel_gap", dpar_mio_tol_rel_gap);
-        MSK::put_double_parameter(task,"dpar_intpnt_tol_rel_gap", dpar_intpnt_tol_rel_gap);
-        MSK::put_int_parameter(task,"dpar_intpnt_co_tol_rel_gap", dpar_intpnt_co_tol_rel_gap);
+        MSK::put_double_param(task,"dpar_optimizer_max_time", dpar_optimizer_max_time);
+        MSK::put_int_param(task,"ipar_intpnt_max_iterations", ipar_intpnt_max_iterations);
+        MSK::put_int_param(task,"ipar_sim_max_iterations", ipar_sim_max_iterations);
+        MSK::put_double_param(task,"dpar_upper_obj_cut", dpar_upper_obj_cut);
+        MSK::put_double_param(task,"dpar_lower_obj_cut", dpar_lower_obj_cut);
+        MSK::put_int_param(task,"ipar_num_threads", ipar_num_threads);
+        MSK::put_double_param(task,"dpar_mio_tol_abs_gap", dpar_mio_tol_abs_gap);
+        MSK::put_double_param(task,"dpar_mio_tol_rel_gap", dpar_mio_tol_rel_gap);
+        MSK::put_double_param(task,"dpar_intpnt_tol_rel_gap", dpar_intpnt_tol_rel_gap);
+        MSK::put_int_param(task,"dpar_intpnt_co_tol_rel_gap", dpar_intpnt_co_tol_rel_gap);
     });
 
     if (parameters.has_time_limit()) {
@@ -1234,15 +1234,15 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
             const absl::Duration time_limit,
             util_time::DecodeGoogleApiProto(parameters.time_limit()),
             _ << "invalid time_limit value for HiGHS.");
-        MSK::put_double_parameter(task,"dpar_optimizer_max_time",
+        MSK::put_double_param(task,"dpar_optimizer_max_time",
                     absl::ToDoubleSeconds(time_limit));
     }
 
     if (parameters.has_iteration_limit()) {
         const int iter_limit = parameters.iteration_limit();
 
-        MSK::put_int_parameter(task,"ipar_intpnt_max_iterations", iter_limit);
-        MSK::put_int_parameter(task,"ipar_sim_max_iterations", iter_limit);
+        MSK::put_int_param(task,"ipar_intpnt_max_iterations", iter_limit);
+        MSK::put_int_param(task,"ipar_sim_max_iterations", iter_limit);
     }
 
     // Not supported in MOSEK 10.2
@@ -1258,41 +1258,41 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     // if (parameters.has_cutoff_limit()) {
     //}
     if (parameters.has_objective_limit()) {
-        if (MSK::get_objective_sense(task) == MSK::ObjSense::MAXIMIZE)
-            MSK::put_double_parameter(task,"dpar_upper_obj_cut", parameters.cutoff_limit());
+        if (MSK::get_obj_sense(task) == MSK::ObjSense::MAXIMIZE)
+            MSK::put_double_param(task,"dpar_upper_obj_cut", parameters.cutoff_limit());
         else
-            MSK::put_double_parameter(task,"dpar_lower_obj_cut", parameters.cutoff_limit());
+            MSK::put_double_param(task,"dpar_lower_obj_cut", parameters.cutoff_limit());
     }
 
     if (parameters.has_threads()) {
-        MSK::put_int_parameter(task,"ipar_num_threads", parameters.threads());
+        MSK::put_int_param(task,"ipar_num_threads", parameters.threads());
     }
 
     if (parameters.has_absolute_gap_tolerance()) {
-        MSK::put_double_parameter(task,"dpar_mio_tol_abs_gap", parameters.absolute_gap_tolerance());
+        MSK::put_double_param(task,"dpar_mio_tol_abs_gap", parameters.absolute_gap_tolerance());
     }
 
     if (parameters.has_relative_gap_tolerance()) {
-        MSK::put_double_parameter(task,"dpar_intpnt_tol_rel_gap",
+        MSK::put_double_param(task,"dpar_intpnt_tol_rel_gap",
                     parameters.absolute_gap_tolerance());
-        MSK::put_double_parameter(task,"dpar_intpnt_co_tol_rel_gap",
+        MSK::put_double_param(task,"dpar_intpnt_co_tol_rel_gap",
                     parameters.absolute_gap_tolerance());
-        MSK::put_double_parameter(task,"dpar_mio_tol_rel_gap", parameters.absolute_gap_tolerance());
+        MSK::put_double_param(task,"dpar_mio_tol_rel_gap", parameters.absolute_gap_tolerance());
     }
 
     switch (parameters.lp_algorithm()) {
         case LP_ALGORITHM_BARRIER:
-            MSK::put_parameter_str(task,"ipar_optimizer", "optimizer_intpnt");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_intpnt");
             break;
         case LP_ALGORITHM_DUAL_SIMPLEX:
-            MSK::put_parameter_str(task,"ipar_optimizer", "optimizer_dual_simplex");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_dual_simplex");
             break;
         case LP_ALGORITHM_PRIMAL_SIMPLEX:
-            MSK::put_parameter_str(task,"ipar_optimizer", "optimizer_primal_simplex");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_primal_simplex");
             break;
         default:
             // use default auto select, usually intpnt
-            MSK::put_parameter_str(task,"ipar_optimizer", "optimizer_free");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_free");
         break;
     }
 
@@ -1379,10 +1379,10 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
 
     int sol_index = -1;
     MSK::SolType sol_type;
-    int numsol = MSK::get_num_solutions(task);
+    int numsol = MSK::get_num_sol(task);
     for (int soli = 0; soli < numsol; ++soli) {
         MSK::SolType st;
-        if (MSK::RES_OK == MSK::get_solution_type(task,soli,&st)) {
+        if (MSK::RES_OK == MSK::get_sol_type(task,soli,&st)) {
             if (sol_index < 0 ||
                 st == MSK::SolType::INTEGER ||
                 (st == MSK::SolType::BASIC && sol_type != MSK::SolType::INTEGER) ||
@@ -1408,7 +1408,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         trmp.set_limit(LimitProto::LIMIT_UNSPECIFIED);
     }
     else if (MSK::RES_OK != MSK::get_problem_status(task,sol_index,&prosta) ||
-             MSK::RES_OK != MSK::get_solution_status(task,sol_index,&psolsta,&dsolsta))
+             MSK::RES_OK != MSK::get_sol_status(task,sol_index,&psolsta,&dsolsta))
     {
         return absl::InternalError("Failed to extract solution data");
     }
@@ -1416,6 +1416,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
         // Attempt to determine TerminationProto from Mosek Termination code,
         // problem status and solution status.
 
+        bool ismax = MSK::get_obj_sense(task) == MSK::ObjSense::MAXIMIZE;
         if (psolsta == MSK::SolSta::INTEGER_OPTIMAL) {
             double pobj;
             if (MSK::RES_OK != MSK::get_primal_obj(task,sol_index,&pobj)) {
