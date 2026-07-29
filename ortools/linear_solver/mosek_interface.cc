@@ -41,7 +41,7 @@
 #include "ortools/linear_solver/linear_solver.h"
 #include "ortools/linear_solver/linear_solver_callback.h"
 //#include "ortools/linear_solver/proto_solver/proto_utils.h"
-#include "ortools/third_party_solvers/mosekcore12_0_environment.h"
+#include "ortools/third_party_solvers/mosekcore12_environment.h"
 //#include "ortools/util/lazy_mutable_copy.h"
 //#include "ortools/util/time_limit.h"
 

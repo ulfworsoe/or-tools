@@ -56,7 +56,7 @@
 #include "ortools/math_opt/solution.pb.h"
 #include "ortools/math_opt/solvers/message_callback_data.h"
 #include "ortools/math_opt/solvers/mosek.pb.h"
-#include "ortools/third_party_solvers/mosekcore12_0_environment.h"
+#include "ortools/third_party_solvers/mosekcore12_environment.h"
 #include "ortools/util/solve_interrupter.h"
 #include "ortools/util/status_macros.h"
 
@@ -733,7 +733,7 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(const ModelPro
     std::unique_ptr<MosekSolver> mskslv(new MosekSolver(std::move(task)));
     MSK::put_task_name(mskslv->task,model.name().c_str());
     MSK::append_rows(mskslv->task,1);
-    MSK::put_objective_row(mskslv->task,0);
+    MSK::put_obj_row(mskslv->task,0);
     OR_RETURN_IF_ERROR(mskslv->AddVariables(model.variables()));
     OR_RETURN_IF_ERROR(mskslv->ReplaceObjective(model.objective()));
     OR_RETURN_IF_ERROR(mskslv->AddConstraints(model.linear_constraints(),
@@ -820,7 +820,6 @@ absl::StatusOr<DualSolutionProto> MosekSolver::DualSolution(
 
                 if (MSK::RES_OK != MSK::get_con_slice_num_row(task,0,numcon,&numconrow) ||
                     MSK::RES_OK != MSK::get_dual_obj(task,sol_index,&dobj) ||
-                    //MSK::RES_OK != MSK::get_solution_y_slice(task,sol_index,0,numcon,numconrow,y.data()) ||
                     MSK::RES_OK != MSK::get_sol_slx_slice(task,sol_index,0,numvar,slx.data()) ||
                     MSK::RES_OK != MSK::get_sol_sux_slice(task,sol_index,0,numvar,sux.data()))
                 {
@@ -1399,7 +1398,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     TerminationProto trmp;
     MSK::ProSta prosta;
     MSK::SolSta psolsta,dsolsta;
-    bool ismax = MSK::get_objective_sense(task) == MSK::ObjSense::MAXIMIZE;
+    bool ismax = MSK::get_obj_sense(task) == MSK::ObjSense::MAXIMIZE;
     if (!soldef) {
         //auto [msg, name, code] = last_error();
         trmp = TerminateForReason(
