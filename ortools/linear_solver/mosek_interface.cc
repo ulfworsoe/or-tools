@@ -41,7 +41,7 @@
 #include "ortools/linear_solver/linear_solver.h"
 #include "ortools/linear_solver/linear_solver_callback.h"
 //#include "ortools/linear_solver/proto_solver/proto_utils.h"
-#include "ortools/third_party_solvers/mosekcore12_environment.h"
+#include "ortools/third_party_solvers/mosekstable12_environment.h"
 //#include "ortools/util/lazy_mutable_copy.h"
 //#include "ortools/util/time_limit.h"
 
@@ -978,7 +978,7 @@ MPSolver::BasisStatus MosekInterface::column_status(int j) const {
       int bas;
       int lowbind,uprbind;
       MSK::get_sol_basic_xj(task_,soli,j,&bas);
-      MSK::get_sol_sta_x(task_,soli,j,&lowbind,&uprbind);
+      MSK::get_sol_sta_var_slice(task_,soli,j,j+1,&lowbind,&uprbind);
 
       if       (bas)    return MPSolver::BASIC;
       else if (lowbind && uprbind) return MPSolver::FIXED_VALUE;

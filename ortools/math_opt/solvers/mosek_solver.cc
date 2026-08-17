@@ -56,7 +56,7 @@
 #include "ortools/math_opt/solution.pb.h"
 #include "ortools/math_opt/solvers/message_callback_data.h"
 #include "ortools/math_opt/solvers/mosek.pb.h"
-#include "ortools/third_party_solvers/mosekcore12_environment.h"
+#include "ortools/third_party_solvers/mosekstable12_environment.h"
 #include "ortools/util/solve_interrupter.h"
 #include "ortools/util/status_macros.h"
 
@@ -911,7 +911,7 @@ absl::StatusOr<SolutionProto> MosekSolver::Solution(
         std::vector<int32_t> xup_binding(numvar);
         MSK::SolSta psta,dsta;
 
-        if (MSK::RES_OK != MSK::get_sol_sta_x_slice(task,sol_index,0,numvar,xlo_binding.data(),xup_binding.data()) ||
+        if (MSK::RES_OK != MSK::get_sol_sta_var_slice(task,sol_index,0,numvar,xlo_binding.data(),xup_binding.data()) ||
             MSK::RES_OK != MSK::get_sol_basic_x_slice(task,sol_index,0,numvar,x_basic.data()) ||
             MSK::RES_OK != MSK::get_sol_status(task,sol_index,&psta,&dsta))
         {
@@ -1073,7 +1073,7 @@ static void stream_cb(void * h, const char * msg) {
 }
 
 
-static void intsolution_cb(MSK::CallbackHandle h, int32_t len, const double * xx) {
+static void intsolution_cb(MSK::CallbackHandle h, int32_t len, double pobj, const double * xx) {
     auto [cb,ordered_xx_ids,variable_map,skip_xx_zeros,terminate] = *((std::tuple<MosekSolver::Callback&,std::vector<int64_t>&,absl::flat_hash_map<int64_t, int32_t>&,bool,bool&>*) h);
     CallbackDataProto cbdata;
 
