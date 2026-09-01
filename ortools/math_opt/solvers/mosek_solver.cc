@@ -1,4 +1,4 @@
-// Copyright 2010-2024 Google LLskip_xx_zeros C
+// Copyright 2010-2024 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -199,7 +199,7 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons,
         MSK::RES_OK != MSK::append_cons(task,
                                         2*add_num_con,
                                         con_dom.data(),
-                                        con_nrows.data(),
+                                        con_rows.size(),
                                         con_rows.data(),
                                         con_rhs.data()) ||
         MSK::RES_OK != MSK::put_ijc_list(task,
@@ -265,7 +265,7 @@ absl::Status MosekSolver::AddConstraints(const LinearConstraintsProto& cons) {
         MSK::RES_OK != MSK::append_cons(task,
                                         2*add_num_con,
                                         con_dom.data(),
-                                        con_nrows.data(),
+                                        con_rows.size(),
                                         con_rows.data(),
                                         con_rhs.data()))
     {
@@ -443,7 +443,7 @@ absl::Status MosekSolver::AddConicConstraints(
     std::vector<double>   cof; cof.reserve(nnz);
     std::vector<double>   row_b; row_b.reserve(nrow);
     std::vector<int32_t>  row_len; row_len.reserve(nrow);
-    std::vector<int64_t>  con_num_row; con_num_row.reserve(ncon);
+    //std::vector<int64_t>  con_num_row; con_num_row.reserve(ncon);
     std::vector<int64_t>  con_dom; con_dom.reserve(ncon);
     std::vector<int64_t>  row_idx; row_idx.reserve(nrow);
 
@@ -467,7 +467,7 @@ absl::Status MosekSolver::AddConicConstraints(
         }
 
         int64_t consize = 1+con.arguments_to_norm_size();
-        con_num_row.push_back(consize);
+        //con_num_row.push_back(consize);
         int64_t domidx;
         if (MSK::RES_OK != MSK::get_domain_quadratic_cone(task,consize,&domidx)) {
             auto [rname,rdesc,msg] = std::move(last_error());
@@ -479,7 +479,7 @@ absl::Status MosekSolver::AddConicConstraints(
     for (int64_t i = 0; i < nrow; ++i) row_idx.push_back(first_row+i);
     if (MSK::RES_OK != MSK::append_rows(task,nrow) ||
         MSK::RES_OK != MSK::put_row_slice(task,first_row,nrow,row_len.data(),subj.data(),cof.data()) ||
-        MSK::RES_OK != MSK::append_cons(task,ncon,con_dom.data(),con_num_row.data(),row_idx.data(),row_b.data()))
+        MSK::RES_OK != MSK::append_cons(task, ncon, con_dom.data(), row_idx.size(), row_idx.data(), row_b.data()))
     {
         auto [rname,rdesc,msg] = std::move(last_error());
         return absl::InternalError((std::stringstream() << rname << ": " << msg).str());
@@ -1203,6 +1203,7 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     // - EmphasisProto scaling
 
     // Stash all parameters to be restored after optimization
+    int ok;
     double dpar_optimizer_max_time;    MSK::get_double_param(task,"dpar_optimizer_max_time",&dpar_optimizer_max_time);
     int    ipar_intpnt_max_iterations; MSK::get_int_param(task,"ipar_intpnt_max_iterations",&ipar_intpnt_max_iterations);
     int    ipar_sim_max_iterations;    MSK::get_int_param(task,"ipar_sim_max_iterations",&ipar_sim_max_iterations);
@@ -1216,16 +1217,16 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     int    ipar_optimizer;             MSK::get_int_param(task,"ipar_optimizer",&ipar_optimizer);
 
     auto _guard_reset_params = absl::MakeCleanup([&]() {
-        MSK::put_double_param(task,"dpar_optimizer_max_time", dpar_optimizer_max_time);
-        MSK::put_int_param(task,"ipar_intpnt_max_iterations", ipar_intpnt_max_iterations);
-        MSK::put_int_param(task,"ipar_sim_max_iterations", ipar_sim_max_iterations);
-        MSK::put_double_param(task,"dpar_upper_obj_cut", dpar_upper_obj_cut);
-        MSK::put_double_param(task,"dpar_lower_obj_cut", dpar_lower_obj_cut);
-        MSK::put_int_param(task,"ipar_num_threads", ipar_num_threads);
-        MSK::put_double_param(task,"dpar_mio_tol_abs_gap", dpar_mio_tol_abs_gap);
-        MSK::put_double_param(task,"dpar_mio_tol_rel_gap", dpar_mio_tol_rel_gap);
-        MSK::put_double_param(task,"dpar_intpnt_tol_rel_gap", dpar_intpnt_tol_rel_gap);
-        MSK::put_int_param(task,"dpar_intpnt_co_tol_rel_gap", dpar_intpnt_co_tol_rel_gap);
+        MSK::put_double_param(task,"dpar_optimizer_max_time", dpar_optimizer_max_time,&ok);
+        MSK::put_int_param(task,"ipar_intpnt_max_iterations", ipar_intpnt_max_iterations,&ok);
+        MSK::put_int_param(task,"ipar_sim_max_iterations", ipar_sim_max_iterations,&ok);
+        MSK::put_double_param(task,"dpar_upper_obj_cut", dpar_upper_obj_cut,&ok);
+        MSK::put_double_param(task,"dpar_lower_obj_cut", dpar_lower_obj_cut,&ok);
+        MSK::put_int_param(task,"ipar_num_threads", ipar_num_threads,&ok);
+        MSK::put_double_param(task,"dpar_mio_tol_abs_gap", dpar_mio_tol_abs_gap,&ok);
+        MSK::put_double_param(task,"dpar_mio_tol_rel_gap", dpar_mio_tol_rel_gap,&ok);
+        MSK::put_double_param(task,"dpar_intpnt_tol_rel_gap", dpar_intpnt_tol_rel_gap,&ok);
+        MSK::put_int_param(task,"dpar_intpnt_co_tol_rel_gap", dpar_intpnt_co_tol_rel_gap,&ok);
     });
 
     if (parameters.has_time_limit()) {
@@ -1234,14 +1235,14 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
             util_time::DecodeGoogleApiProto(parameters.time_limit()),
             _ << "invalid time_limit value for HiGHS.");
         MSK::put_double_param(task,"dpar_optimizer_max_time",
-                    absl::ToDoubleSeconds(time_limit));
+                    absl::ToDoubleSeconds(time_limit),&ok);
     }
 
     if (parameters.has_iteration_limit()) {
         const int iter_limit = parameters.iteration_limit();
 
-        MSK::put_int_param(task,"ipar_intpnt_max_iterations", iter_limit);
-        MSK::put_int_param(task,"ipar_sim_max_iterations", iter_limit);
+        MSK::put_int_param(task,"ipar_intpnt_max_iterations", iter_limit,&ok);
+        MSK::put_int_param(task,"ipar_sim_max_iterations", iter_limit,&ok);
     }
 
     // Not supported in MOSEK 10.2
@@ -1258,40 +1259,40 @@ absl::StatusOr<SolveResultProto> MosekSolver::Solve(
     //}
     if (parameters.has_objective_limit()) {
         if (MSK::get_obj_sense(task) == MSK::ObjSense::MAXIMIZE)
-            MSK::put_double_param(task,"dpar_upper_obj_cut", parameters.cutoff_limit());
+            MSK::put_double_param(task,"dpar_upper_obj_cut", parameters.cutoff_limit(),&ok);
         else
-            MSK::put_double_param(task,"dpar_lower_obj_cut", parameters.cutoff_limit());
+            MSK::put_double_param(task,"dpar_lower_obj_cut", parameters.cutoff_limit(),&ok);
     }
 
     if (parameters.has_threads()) {
-        MSK::put_int_param(task,"ipar_num_threads", parameters.threads());
+        MSK::put_int_param(task,"ipar_num_threads", parameters.threads(),&ok);
     }
 
     if (parameters.has_absolute_gap_tolerance()) {
-        MSK::put_double_param(task,"dpar_mio_tol_abs_gap", parameters.absolute_gap_tolerance());
+        MSK::put_double_param(task,"dpar_mio_tol_abs_gap", parameters.absolute_gap_tolerance(),&ok);
     }
 
     if (parameters.has_relative_gap_tolerance()) {
         MSK::put_double_param(task,"dpar_intpnt_tol_rel_gap",
-                    parameters.absolute_gap_tolerance());
+                    parameters.absolute_gap_tolerance(),&ok);
         MSK::put_double_param(task,"dpar_intpnt_co_tol_rel_gap",
-                    parameters.absolute_gap_tolerance());
-        MSK::put_double_param(task,"dpar_mio_tol_rel_gap", parameters.absolute_gap_tolerance());
+                    parameters.absolute_gap_tolerance(),&ok);
+        MSK::put_double_param(task,"dpar_mio_tol_rel_gap", parameters.absolute_gap_tolerance(),&ok);
     }
 
     switch (parameters.lp_algorithm()) {
         case LP_ALGORITHM_BARRIER:
-            MSK::put_param_str(task,"ipar_optimizer", "optimizer_intpnt");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_intpnt",&ok);
             break;
         case LP_ALGORITHM_DUAL_SIMPLEX:
-            MSK::put_param_str(task,"ipar_optimizer", "optimizer_dual_simplex");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_dual_simplex",&ok);
             break;
         case LP_ALGORITHM_PRIMAL_SIMPLEX:
-            MSK::put_param_str(task,"ipar_optimizer", "optimizer_primal_simplex");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_primal_simplex",&ok);
             break;
         default:
             // use default auto select, usually intpnt
-            MSK::put_param_str(task,"ipar_optimizer", "optimizer_free");
+            MSK::put_param_str(task,"ipar_optimizer", "optimizer_free", &ok);
         break;
     }
 
