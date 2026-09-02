@@ -61,7 +61,7 @@ public final class CallbackDataTest {
   @Test
   public void new_modelMissingVariableInSolution_throws() {
     var model = new Model();
-    var unused = model.addVariable();
+    @SuppressWarnings("UnnamedVariable") var unused = model.addVariable();
     var cbDataProto =
         CallbackDataProto.newBuilder()
             .setEvent(CallbackEventProto.CALLBACK_EVENT_MIP_NODE)
@@ -76,7 +76,7 @@ public final class CallbackDataTest {
   @Test
   public void new_noSolution_hasData() {
     var model = new Model();
-    var unused = model.addVariable();
+    @SuppressWarnings("UnnamedVariable") var unused = model.addVariable();
     var cbDataProto = CallbackDataProto.newBuilder()
                           .setEvent(CallbackEventProto.CALLBACK_EVENT_PRESOLVE)
                           .setPresolveStats(PresolveStats.newBuilder().setBoundChanges(2).build())

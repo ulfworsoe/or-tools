@@ -141,7 +141,7 @@ public final class VrpCapacity {
       int fromNode = manager.indexToNode(fromIndex);
       return data.demands[fromNode];
     });
-    boolean unused = routing.addDimensionWithVehicleCapacity(demandCallbackIndex,
+    routing.addDimensionWithVehicleCapacity(demandCallbackIndex,
         0, // null capacity slack
         data.vehicleCapacities, // vehicle maximum capacities
         true, // start cumul to zero

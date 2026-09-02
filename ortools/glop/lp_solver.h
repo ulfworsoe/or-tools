@@ -18,7 +18,7 @@
 #include <string>
 #include <utility>
 
-#include "absl/base/attributes.h"
+#include "absl/base/nullability.h"
 #include "ortools/glop/parameters.pb.h"
 #include "ortools/glop/revised_simplex.h"
 #include "ortools/lp_data/lp_data.h"
@@ -42,7 +42,7 @@ class LPSolver {
   // See the proto for an extensive documentation.
   void SetParameters(const GlopParameters& parameters);
   const GlopParameters& GetParameters() const;
-  GlopParameters* GetMutableParameters();
+  GlopParameters* absl_nonnull GetMutableParameters();
 
   // Returns a string that describes the version of the solver.
   static std::string GlopVersion();
@@ -54,31 +54,18 @@ class LPSolver {
   // Note that depending on the returned SolveStatus the solution values may not
   // mean much, so it is important to check the returned status.
   //
-  // Incrementality: From one SolveWithDetails() call to the next, the internal
-  // state is not cleared and the solver may take advantage of its current state
-  // if the given lp is only slightly modified. If the modification is too
-  // important, or if the solver does not see how to reuse the previous state
-  // efficiently, it will just solve the problem from scratch. On the other
-  // hand, if the lp is the same, calling SolveWithDetails() again should
-  // basically resume the solve from the last position. To disable this
-  // behavior, simply call Clear() before.
-  //
-  // TODO: b/365958111 - Rename Solve() once the deprecated function is removed?
-  SolveStatus SolveWithDetails(const LinearProgram& lp);
+  // Incrementality: From one Solve() call to the next, the internal state is
+  // not cleared and the solver may take advantage of its current state if the
+  // given lp is only slightly modified. If the modification is too important,
+  // or if the solver does not see how to reuse the previous state efficiently,
+  // it will just solve the problem from scratch. On the other hand, if the lp
+  // is the same, calling Solve() again should basically resume the solve from
+  // the last position. To disable this behavior, simply call Clear() before.
+  SolveStatus Solve(const LinearProgram& lp);
 
-  // Same as SolveWithDetails() but use the given time limit rather than
-  // constructing a new one from the current GlopParameters.
-  //
-  // TODO: b/365958111 - Rename Solve() once the deprecated function is removed?
-  SolveStatus SolveWithDetails(const LinearProgram& lp, TimeLimit& time_limit);
-
-  // Same as SolveWithDetails() but return only ProblemStatus instead of
-  // detailed SolveStatus.
-  [[deprecated("Prefer using SolveWithDetails().")]]
-  ABSL_MUST_USE_RESULT ProblemStatus Solve(const LinearProgram& lp);
-  [[deprecated("Prefer using SolveWithDetails().")]]
-  ABSL_MUST_USE_RESULT ProblemStatus SolveWithTimeLimit(const LinearProgram& lp,
-                                                        TimeLimit& time_limit);
+  // Same as Solve() but use the given time limit rather than constructing a new
+  // one from the current GlopParameters.
+  SolveStatus Solve(const LinearProgram& lp, TimeLimit& time_limit);
 
   // Puts the solver in a clean state.
   //

@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,6 +32,7 @@
 #include "google/protobuf/repeated_field.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/base/types.h"
+#include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/sat/integer_base.h"
 #include "ortools/sat/presolve_context.h"
@@ -131,13 +131,11 @@ std::vector<VariableEncodingLocalModel> CreateVariableEncodingLocalModels(
             : (ct.constraint_case() == ConstraintProto::kExactlyOne
                    ? ct.exactly_one()
                    : ct.bool_or());
-    if (absl::c_count_if(
-            bool_ct.literals(),
-            [booleans_potentially_encoding_domain](int ref) {
-              return booleans_potentially_encoding_domain[PositiveRef(ref)];
-            }) < 2) {
-      continue;
+    int count = 0;
+    for (const int ref : bool_ct.literals()) {
+      if (booleans_potentially_encoding_domain[PositiveRef(ref)]) ++count;
     }
+    if (count < 2) continue;
     constraint_encoding_or[new_encoding_or_count++] = c;
   }
   constraint_encoding_or.resize(new_encoding_or_count);

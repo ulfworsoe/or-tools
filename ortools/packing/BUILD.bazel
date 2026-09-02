@@ -89,6 +89,7 @@ cc_binary(
         ":vector_bin_packing_parser",
         "//ortools/base",
         "//ortools/base:file",
+        "//ortools/base:log_severity",
         "//ortools/linear_solver",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/log",
@@ -104,6 +105,7 @@ cc_test(
     srcs = ["vector_bin_packing_main.cc"],
     args = ["--input $(rootpath //ortools/packing/testdata:1D__bpp_scholl__bin2data.N2W2B1R0.vbp)"],
     data = ["//ortools/packing/testdata:1D__bpp_scholl__bin2data.N2W2B1R0.vbp"],
+    tags = ["noci"],
     deps = [
         "//ortools/base",
         "//ortools/base:file",

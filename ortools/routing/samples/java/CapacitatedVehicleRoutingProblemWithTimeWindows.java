@@ -45,7 +45,7 @@ public class CapacitatedVehicleRoutingProblemWithTimeWindows {
     final V second;
 
     public static <K, V> Pair<K, V> of(K element0, V element1) {
-      return new Pair<K, V>(element0, element1);
+      return new Pair<>(element0, element1);
     }
 
     public Pair(K element0, V element1) {

@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
-#include <limits>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -910,7 +909,7 @@ IntegerVariable IntegerTrail::AddIntegerVariable(const Domain& domain) {
   return var;
 }
 
-const Domain& IntegerTrail::InitialVariableDomain(IntegerVariable var) const {
+const Domain& IntegerTrail::LevelZeroDomain(IntegerVariable var) const {
   const PositiveOnlyIndex index = GetPositiveOnlyIndex(var);
   if (VariableIsPositive(var)) return (*domains_)[index];
   temp_domain_ = (*domains_)[index].Negation();
@@ -918,7 +917,7 @@ const Domain& IntegerTrail::InitialVariableDomain(IntegerVariable var) const {
 }
 
 std::string IntegerTrail::VarDebugString(IntegerVariable var) const {
-  return absl::StrCat(var, " root:", InitialVariableDomain(var).ToString(),
+  return absl::StrCat(var, " root:", LevelZeroDomain(var).ToString(),
                       " current:[", LowerBound(var), ",", UpperBound(var), "]");
 }
 
@@ -1152,11 +1151,16 @@ void IntegerTrail::RelaxLinearReason(IntegerValue slack,
   }
   trail_indices->resize(new_size);
   std::make_heap(relax_heap_.begin(), relax_heap_.end());
+  if (relax_heap_.empty()) return;
 
-  while (slack > 0 && !relax_heap_.empty()) {
-    const RelaxHeapEntry heap_entry = relax_heap_.front();
-    std::pop_heap(relax_heap_.begin(), relax_heap_.end());
-    relax_heap_.pop_back();
+  // Optim: Our heap never grow past its initial size, this helps a bit.
+  int heap_size = relax_heap_.size();
+  RelaxHeapEntry* heap = relax_heap_.data();
+
+  while (slack > 0 && heap_size > 0) {
+    const RelaxHeapEntry heap_entry = heap[0];
+    std::pop_heap(heap, heap + heap_size);
+    --heap_size;
 
     // The slack might have changed since the entry was added.
     if (heap_entry.diff > slack) {
@@ -1188,14 +1192,15 @@ void IntegerTrail::RelaxLinearReason(IntegerValue slack,
       trail_indices->push_back(index);
       continue;
     }
-    relax_heap_.push_back({index, heap_entry.coeff, diff});
-    std::push_heap(relax_heap_.begin(), relax_heap_.end());
+
+    heap[heap_size++] = {index, heap_entry.coeff, diff};
+    std::push_heap(heap, heap + heap_size);
   }
 
   // If we aborted early because of the slack, we need to push all remaining
   // indices back into the reason.
-  for (const RelaxHeapEntry& entry : relax_heap_) {
-    trail_indices->push_back(entry.index);
+  for (int i = 0; i < heap_size; ++i) {
+    trail_indices->push_back(heap[i].index);
   }
   relax_heap_.clear();
 }
@@ -1349,7 +1354,7 @@ bool IntegerTrail::RootLevelEnqueue(IntegerLiteral i_lit) {
   // Update the level-zero bound in any case.
   integer_trail_[i_lit.var.value()].bound = i_lit.bound;
 
-  // Make sure we will update InitialVariableDomain() when we are back
+  // Make sure we will update LevelZeroDomain() when we are back
   // at level zero.
   delayed_to_fix_->integer_literal_to_fix.push_back(i_lit);
 
@@ -1470,23 +1475,22 @@ bool IntegerTrail::ReasonIsValid(
   if (!ReasonIsValid(literal_reason, integer_reason)) return false;
   if (debug_checker_ == nullptr) return true;
 
-  std::vector<Literal> clause;
-  clause.assign(literal_reason.begin(), literal_reason.end());
-  std::vector<IntegerLiteral> lits = {integer_reason.begin(),
-                                      integer_reason.end()};
+  is_valid_tmp_reason_.assign(literal_reason.begin(), literal_reason.end());
+  is_valid_tmp_integer_reason_.assign(integer_reason.begin(),
+                                      integer_reason.end());
 
   const IntegerLiteral negated_i_lit =
       i_lit.IsAlwaysFalse() ? IntegerLiteral::TrueLiteral() : i_lit.Negated();
-  lits.push_back(negated_i_lit);
-  if (!debug_checker_(clause, lits)) {
+  is_valid_tmp_integer_reason_.push_back(negated_i_lit);
+  if (!debug_checker_(is_valid_tmp_reason_, is_valid_tmp_integer_reason_)) {
     LOG(INFO) << "Invalid reason for loaded solution: " << i_lit << " "
               << literal_reason << " " << integer_reason;
     return false;
   }
-  lits.pop_back();
+  is_valid_tmp_integer_reason_.pop_back();
 
-  MergeReasonInto(lits, &clause);
-  if (!debug_checker_(clause, {negated_i_lit})) {
+  MergeReasonInto(is_valid_tmp_integer_reason_, &is_valid_tmp_reason_);
+  if (!debug_checker_(is_valid_tmp_reason_, {negated_i_lit})) {
     LOG(INFO) << "Invalid reason for loaded solution after merging: " << i_lit
               << " " << literal_reason << " " << integer_reason;
     return false;
@@ -1500,17 +1504,16 @@ bool IntegerTrail::ReasonIsValid(
   if (!ReasonIsValid(literal_reason, integer_reason)) return false;
   if (debug_checker_ == nullptr) return true;
 
-  std::vector<Literal> clause;
-  clause.assign(literal_reason.begin(), literal_reason.end());
-  clause.push_back(lit);
-  if (!debug_checker_(clause, integer_reason)) {
+  is_valid_tmp_reason_.assign(literal_reason.begin(), literal_reason.end());
+  is_valid_tmp_reason_.push_back(lit);
+  if (!debug_checker_(is_valid_tmp_reason_, integer_reason)) {
     LOG(INFO) << "Invalid reason for loaded solution: " << lit << " "
               << literal_reason << " " << integer_reason;
     return false;
   }
 
-  MergeReasonInto(integer_reason, &clause);
-  if (!debug_checker_(clause, {})) {
+  MergeReasonInto(integer_reason, &is_valid_tmp_reason_);
+  if (!debug_checker_(is_valid_tmp_reason_, {})) {
     LOG(INFO) << "Invalid reason for loaded solution after merging: " << lit
               << " " << literal_reason << " " << integer_reason;
     return false;

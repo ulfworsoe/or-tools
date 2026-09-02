@@ -368,6 +368,28 @@ struct BinaryCircuit {
     }
   }
 
+  // Create a new intermediate node which is the target of f(a,b).
+  int AddGate(SmallBitset type, int a, int b) {
+    const int target = num_vars++;
+    gates.emplace_back(type, target, a, b);
+    return target;
+  }
+  int AddCopyOf(int a) {
+    const int target = num_vars++;
+    gates.emplace_back(0b1010, target, a, 0);
+    return target;
+  }
+  int AddNegationOf(int a) {
+    const int target = num_vars++;
+    gates.emplace_back(0b0101, target, a, 0);
+    return target;
+  }
+  int AddConstant(bool at_true) {
+    const int target = num_vars++;
+    gates.emplace_back(at_true ? 0b1111 : 0b0000, target, 0, 0);
+    return target;
+  }
+
   // Inputs are in [0, num_inputs). The targets are in [0, num_vars).
   int num_inputs = 0;
   int num_vars = 0;
@@ -402,6 +424,12 @@ void RemoveEquivalences(absl::Span<const std::pair<Literal, Literal>> equiv,
                         BinaryCircuit* circuit,
                         absl::Span<const Literal> extra_fixing = {});
 
+// Given a list of nodes that are not already inputs, remove the gates defining
+// them, and reorder everything so that they are considered as new inputs.
+// They will appear after the original circuit inputs.
+BinaryCircuit ConvertInnerNodeToInputs(const BinaryCircuit& circuit,
+                                       absl::Span<const int> new_inputs);
+
 // Constructs a problem to prove the equivalence of both circuits,
 // the num_inputs and the outputs size must be equivalent.
 // This will create a new circuit where the output are 1 iff the output of
@@ -411,6 +439,93 @@ void RemoveEquivalences(absl::Span<const std::pair<Literal, Literal>> equiv,
 // the new output is one, and show infeasibility.
 BinaryCircuit ConstructMitter(const BinaryCircuit& circuit_a,
                               const BinaryCircuit& circuit_b);
+
+// Append a copy of the given circuit into a "result" circuit we are currently
+// constructing.
+//
+// The input i of the circuit will be wired to input_map[i] of the initial
+// result circuit. And an input_map[i] of -1 is a special case that means that
+// input will be set to zero.
+//
+// This will append new gates and "local variable" at the end of the result
+// circuit.
+//
+// Returns the set of outputs indices of "circuit" in the new space.
+std::vector<int> AppendCircuit(absl::Span<const int> input_map,
+                               const BinaryCircuit& circuit,
+                               BinaryCircuit* result);
+
+// For a binary circuit of n inputs, see if n can be decomposed
+// in (a, b) with the size of a being m, such that f(a, b) = g(a, f(0, b)).
+//
+// The first function use sampling to see if this seem to be the case and to
+// "reconstruct" g(). This is a bit flawed because with random sampling we will
+// probably not cover the full domain of g(). For multi-addition, for instance,
+// to recover the output zero, we would need to try the all zero input, which
+// will not happen with random input.
+//
+// The second function create a kind of mitter circuit to prove that a g() exist
+// without having to describe it. For that we construct a circuit with m + 2 *
+// (n - m) inputs. That evaluate f(a, b), f(a, b'), f(0, b), f(0, b'). that
+// forces f(0, b) to be f(0, b'). And test that f(a, b) != f(a, b').
+bool SampleDecomposition(int m, const BinaryCircuit& circuit);
+BinaryCircuit ConstructDecomposition(int m, const BinaryCircuit& circuit);
+
+// Generates an n-bit adder circuit that computes output = (A + B) mod (2^n).
+// Input layout:  A = [0, n), B = [n, 2*n)
+// Output layout: Sum bits [S_0, S_1, ..., S_{n-1}]
+BinaryCircuit MakeNBitAdder(int n);
+
+// See if the circuit look like sum_i(bit_i * constants[i]).
+//
+// The first function just check it with sampling.
+//
+// The second function dump num_input model to prove that this is the case.
+// If there is n input bits, we have n models
+// where each show that f(0, a_i, suffix) = f(0, a_i, 0) + f(0, 0, suffix).
+// The models are easier and easier to solve.
+bool RecoverNWayAddition(const BinaryCircuit& circuit,
+                         int num_samples = 1 << 10);
+std::vector<BinaryCircuit> GetNWayAdditionSubmodels(
+    const BinaryCircuit& circuit);
+
+// Various circuit implementation of a "n-way adder". These return a circuit
+// that compute the m-bit sum (sum_i inputs[i] * constants[i]), where the
+// constants are m-bit wide.
+//
+// From a verification perspective, The BuildPopcountCarryChainCircuit() is the
+// best as it is less sensible to permutations of the inputs. The other are
+// smaller and less deep, they are more for circuit generation and testing.
+BinaryCircuit BuildPopcountCarryChainCircuit(
+    int m, absl::Span<const uint32_t> constants);
+BinaryCircuit BuildColumnWiseLinearCombinationCircuit(
+    int m, absl::Span<const uint32_t> constants);
+BinaryCircuit BuildDaddaKoggeStoneCircuit(int m,
+                                          absl::Span<const uint32_t> constants);
+
+// Returns a list of intermediate nodes, each of the form (node n, term_n) and
+// for which the output of the circuit seem to be equivalent to
+//     f(input) = f'(input) + value_n * term_n.
+// Where f'() is the same as f(), but all gates consuming node n receive zero
+// instead, and value_n is the value of node n in f(input).
+std::vector<std::pair<int, uint64_t>> SampleForAdditionCandidates(
+    const BinaryCircuit& circuit, int num_samples = 1 << 10);
+
+// TODO(user): rather than encoding the addition in an order dependent way
+// we could use CP-SAT direct model for the mitter (to try). But we will loose
+// the LRAT proof though.
+struct AdditionDecompositionResult {
+  BinaryCircuit reduced_circuit;
+  BinaryCircuit final_circuit;
+
+  // The final circuit is constructed by adding sum input_i * term_i to the
+  // output of the reduced circuit.
+  std::vector<std::pair<int, uint64_t>> input_term_pairs;
+};
+AdditionDecompositionResult ValidateAdditionCandidates(
+    absl::Span<const std::pair<int, uint64_t>> candidates,
+    const BinaryCircuit& circuit,
+    const std::function<CpSolverResponse(const CpModelProto& cp_model)>& solve);
 
 // Output a "dot" file representation of the given circuit. This tries to
 // simplify the final graph by removing all intermediate node that are used only

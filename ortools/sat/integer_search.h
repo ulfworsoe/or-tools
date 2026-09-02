@@ -28,6 +28,7 @@
 #include <functional>
 #include <vector>
 
+#include "absl/base/attributes.h"
 #include "absl/types/span.h"
 #include "ortools/sat/clause.h"
 #include "ortools/sat/cp_model.pb.h"
@@ -211,7 +212,7 @@ std::function<BooleanOrIntegerLiteral()> FollowHint(
 // ask the (i+1)-th. If every heuristic returned kNoLiteralIndex,
 // returns kNoLiteralIndex.
 std::function<BooleanOrIntegerLiteral()> SequentialSearch(
-    std::vector<std::function<BooleanOrIntegerLiteral()>> heuristics);
+    const std::vector<std::function<BooleanOrIntegerLiteral()>>& heuristics);
 
 // Changes the value of the given decision by 'var_selection_heuristic'. We try
 // to see if the decision is "associated" with an IntegerVariable, and if it is
@@ -260,6 +261,10 @@ bool LinearizedPartIsLarge(Model* model);
 
 // A restart policy that restarts every k failures.
 std::function<bool()> RestartEveryKFailures(int k, SatSolver* solver);
+
+// A restart policy that restarts after a fixed deterministic time.
+std::function<bool()> RestartAfterDeterministicTime(double deterministic_time,
+                                                    TimeLimit* time_limit);
 
 // A restart policy that uses the underlying sat solver's policy.
 std::function<bool()> SatSolverRestartPolicy(Model* model);

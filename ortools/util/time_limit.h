@@ -33,6 +33,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "ortools/base/base_export.h"
+#include "ortools/base/log_severity.h"
 #include "ortools/base/macros/buildenv.h"
 #include "ortools/base/timer.h"
 #include "ortools/base/types.h"
@@ -391,9 +392,22 @@ class SharedTimeLimit {
     return time_limit_->LimitReached();
   }
 
+  void DisableStop() {
+    absl::MutexLock lock(mutex_);
+    if (stopped_ == &stopped_boolean_) {
+      time_limit_->RegisterExternalBooleanAsLimit(nullptr);
+    }
+    stopped_ = nullptr;
+  }
+
+  // Warning: this will stop any other TimeLimit that was using the same
+  // external boolean as this one. Call DisableStop() if you want to disable
+  // this behavior.
   void Stop() {
     absl::MutexLock lock(mutex_);
-    *stopped_ = true;
+    if (stopped_ != nullptr) {
+      *stopped_ = true;
+    }
   }
 
   void UpdateLocalLimit(TimeLimit* local_limit) {

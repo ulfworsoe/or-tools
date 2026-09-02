@@ -14,12 +14,15 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//ortools/copts:configure_copts.bzl", "ORTOOLS_DEFAULT_COPTS", "ORTOOLS_DEFAULT_LINKOPTS", "ORTOOLS_TEST_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "binary_search",
     hdrs = ["binary_search.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:log_severity",
         "@abseil-cpp//absl/functional:function_ref",
@@ -33,6 +36,8 @@ cc_library(
 cc_test(
     name = "binary_search_test",
     srcs = ["binary_search_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":binary_search",
         "//ortools/base:gmock_main",
@@ -51,6 +56,8 @@ cc_test(
 cc_binary(
     name = "binary_search_benchmark",
     srcs = ["binary_search_benchmark.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":binary_search",
         "//ortools/base:benchmark_main",
@@ -62,6 +69,8 @@ cc_binary(
 cc_library(
     name = "radix_sort",
     hdrs = ["radix_sort.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:log_severity",
         "//ortools/base:types",
@@ -77,10 +86,8 @@ cc_library(
 cc_test(
     name = "radix_sort_test",
     srcs = ["radix_sort_test.cc"],
-    copts = select({
-        "@platforms//os:windows": ["/Zc:preprocessor"],
-        "//conditions:default": [],
-    }),
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     tags = ["noci"],
     deps = [
         ":radix_sort",
@@ -101,6 +108,8 @@ cc_test(
 cc_binary(
     name = "radix_sort_benchmark",
     srcs = ["radix_sort_benchmark.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":radix_sort",
         "//ortools/base:benchmark_main",
@@ -117,6 +126,8 @@ cc_binary(
 cc_binary(
     name = "radix_sort_release_benchmark",
     srcs = ["radix_sort_release_benchmark.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":radix_sort",
         "//ortools/base:benchmark_main",
@@ -132,6 +143,8 @@ cc_library(
     name = "duplicate_remover",
     srcs = ["duplicate_remover.cc"],
     hdrs = ["duplicate_remover.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/numeric:bits",
@@ -146,6 +159,8 @@ cc_library(
     name = "hungarian",
     srcs = ["hungarian.cc"],
     hdrs = ["hungarian.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/log",
@@ -159,6 +174,8 @@ cc_test(
     name = "hungarian_test",
     size = "medium",
     srcs = ["hungarian_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":hungarian",
         "//ortools/base:gmock_main",
@@ -173,6 +190,8 @@ cc_test(
 cc_library(
     name = "adjustable_k_ary_heap",
     hdrs = ["adjustable_k_ary_heap.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:strong_int",
         "@abseil-cpp//absl/log:check",
@@ -184,6 +203,8 @@ cc_test(
     name = "adjustable_k_ary_heap_test",
     size = "medium",
     srcs = ["adjustable_k_ary_heap_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":adjustable_k_ary_heap",
         "//ortools/base:gmock_main",
@@ -198,6 +219,8 @@ cc_test(
     size = "large",
     timeout = "eternal",
     srcs = ["adjustable_k_ary_heap_stress_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     tags = ["manual"],
     deps = [
         ":adjustable_k_ary_heap",
@@ -213,11 +236,12 @@ cc_library(
     name = "knapsack_solver",
     srcs = ["knapsack_solver.cc"],
     hdrs = ["knapsack_solver.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:stl_util",
         "//ortools/base:types",
-        "//ortools/linear_solver:linear_solver_base",
-        "//ortools/linear_solver:linear_solver_scip",
+        "//ortools/linear_solver:linear_solver_lib",
         "//ortools/sat:cp_model",
         "//ortools/sat:cp_model_cc_proto",
         "//ortools/sat:cp_model_solver",
@@ -228,13 +252,30 @@ cc_library(
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/strings:string_view",
         "@abseil-cpp//absl/time",
-    ],
+    ] + select({
+        "//ortools/linear_solver:use_cbc": [
+            "//ortools/linear_solver:linear_solver_cbc",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//ortools/linear_solver:use_glpk": [
+            "//ortools/linear_solver:linear_solver_glpk",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//ortools/linear_solver:use_scip": [
+            "//ortools/linear_solver:linear_solver_scip",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(
     name = "knapsack_solver_test",
     size = "medium",
     srcs = ["knapsack_solver_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":knapsack_solver",
         "//ortools/base:gmock_main",
@@ -247,6 +288,8 @@ cc_test(
 cc_library(
     name = "dense_doubly_linked_list",
     hdrs = ["dense_doubly_linked_list.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:log_severity",
         "@abseil-cpp//absl/log:check",
@@ -256,6 +299,8 @@ cc_library(
 cc_test(
     name = "dense_doubly_linked_list_test",
     srcs = ["dense_doubly_linked_list_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":dense_doubly_linked_list",
         "//ortools/base:gmock_main",
@@ -266,6 +311,8 @@ cc_library(
     name = "dynamic_partition",
     srcs = ["dynamic_partition.cc"],
     hdrs = ["dynamic_partition.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:murmur",
         "@abseil-cpp//absl/log:check",
@@ -277,6 +324,8 @@ cc_library(
 cc_test(
     name = "dynamic_partition_test",
     srcs = ["dynamic_partition_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":dynamic_partition",
         "//ortools/base:gmock_main",
@@ -291,7 +340,10 @@ cc_test(
 cc_library(
     name = "space_saving_most_frequent",
     hdrs = ["space_saving_most_frequent.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
+        "//ortools/base:log_severity",
         "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/base:nullability",
         "@abseil-cpp//absl/container:flat_hash_set",
@@ -303,6 +355,8 @@ cc_library(
 cc_test(
     name = "space_saving_most_frequent_test",
     srcs = ["space_saving_most_frequent_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":space_saving_most_frequent",
         "//ortools/base:gmock_main",
@@ -318,6 +372,8 @@ cc_test(
 cc_binary(
     name = "space_saving_most_frequent_benchmark",
     srcs = ["space_saving_most_frequent_benchmark.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":space_saving_most_frequent",
         "//ortools/base:benchmark_main",
@@ -335,6 +391,8 @@ cc_library(
     name = "sparse_permutation",
     srcs = ["sparse_permutation.cc"],
     hdrs = ["sparse_permutation.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/strings",
@@ -345,6 +403,8 @@ cc_library(
 cc_test(
     name = "sparse_permutation_test",
     srcs = ["sparse_permutation_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":sparse_permutation",
         "//ortools/base:gmock_main",
@@ -357,6 +417,8 @@ cc_library(
     name = "dynamic_permutation",
     srcs = ["dynamic_permutation.cc"],
     hdrs = ["dynamic_permutation.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":sparse_permutation",
         "@abseil-cpp//absl/log:check",
@@ -368,6 +430,8 @@ cc_library(
     name = "find_graph_symmetries",
     srcs = ["find_graph_symmetries.cc"],
     hdrs = ["find_graph_symmetries.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":dense_doubly_linked_list",
         ":dynamic_partition",
@@ -375,9 +439,11 @@ cc_library(
         ":sparse_permutation",
         "//ortools/base:log_severity",
         "//ortools/base:murmur",
+        "//ortools/base:types",
         "//ortools/graph_base:graph",
         "//ortools/graph_base:iterators",
         "//ortools/graph_base:util",
+        "//ortools/util:bitset",
         "//ortools/util:stats",
         "//ortools/util:time_limit",
         "@abseil-cpp//absl/algorithm:container",
@@ -398,6 +464,7 @@ cc_library(
 cc_test(
     name = "find_graph_symmetries_test",
     srcs = ["find_graph_symmetries_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
     deps = [
         ":dynamic_partition",
         ":dynamic_permutation",
@@ -435,12 +502,16 @@ cc_test(
 cc_library(
     name = "binary_indexed_tree",
     hdrs = ["binary_indexed_tree.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = ["@abseil-cpp//absl/log:check"],
 )
 
 cc_test(
     name = "binary_indexed_tree_test",
     srcs = ["binary_indexed_tree_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":binary_indexed_tree",
         "//ortools/base:gmock_main",
@@ -450,6 +521,8 @@ cc_test(
 cc_test(
     name = "dynamic_permutation_test",
     srcs = ["dynamic_permutation_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":dynamic_permutation",
         "//ortools/base:gmock_main",
@@ -460,6 +533,8 @@ cc_library(
     name = "n_choose_k",
     srcs = ["n_choose_k.cc"],
     hdrs = ["n_choose_k.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":binary_search",
         "//ortools/base:mathutil",
@@ -477,6 +552,8 @@ cc_library(
 cc_library(
     name = "multikey_radix_sort",
     hdrs = ["multikey_radix_sort.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "@abseil-cpp//absl/algorithm:container",
         "@abseil-cpp//absl/base",
@@ -488,6 +565,9 @@ cc_library(
 cc_test(
     name = "n_choose_k_test",
     srcs = ["n_choose_k_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
+    tags = ["noci"],
     deps = [
         ":n_choose_k",
         "//ortools/base:dump_vars",
@@ -505,6 +585,9 @@ cc_test(
 cc_test(
     name = "multikey_radix_sort_test",
     srcs = ["multikey_radix_sort_test.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
+    tags = ["noci"],
     deps = [
         ":multikey_radix_sort",
         ":radix_sort",
@@ -523,6 +606,8 @@ cc_test(
 cc_binary(
     name = "multikey_radix_sort_benchmark",
     srcs = ["multikey_radix_sort_benchmark.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":multikey_radix_sort",
         ":radix_sort",

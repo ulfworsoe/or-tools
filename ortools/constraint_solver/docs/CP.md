@@ -13,12 +13,15 @@ Java and .Net. Each language have different requirements for the code samples.
 
 ```cpp
 // Snippet from ortools/constraint_solver/samples/simple_cp_program.cc
+#include <cstdint>
+#include <cstdlib>
 #include <ostream>
 #include <string>
 
 #include "ortools/base/init_google.h"
 #include "ortools/base/log_severity.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 
 namespace operations_research {
@@ -78,6 +81,7 @@ int main(int argc, char* argv[]) {
 """Simple Constraint optimization example."""
 
 from ortools.constraint_solver.python import constraint_solver as cp
+
 
 
 def main():

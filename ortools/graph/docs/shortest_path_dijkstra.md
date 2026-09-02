@@ -5,7 +5,7 @@
 Below, we give several examples of how to solve shortest path problems on
 directed and undirected graphs with nonnegative arc/edge lengths using the
 functions and classes defined in
-[`bounded_dijkstra.h`](http://cs/file:bounded_dijkstra.h). A forthcoming page
+[`bounded_dijkstra.h`](/ortools/graph/bounded_dijkstra.h). A forthcoming page
 will help you determine if the methods in this page (based on Dijkstra's
 algorithm) are best for your problem.
 
@@ -13,34 +13,38 @@ algorithm) are best for your problem.
 
 Below, we give an example showing how to solve a shortest path problem on a
 directed graph with nonnegative arc lengths. This example can be found at
-[`dijkstra_directed.cc`](../samples/dijkstra_directed.cc).
+[`dijkstra_directed.cc`](/ortools/graph/samples/dijkstra_directed.cc).
 Consider the directed graph below:
 
-```dot
-digraph d {
-  rankdir="LR"
-  node [style=filled, color="lightskyblue"]
-  0 -> 1 [label="3", penwidth=4, color="red"];
-  0 -> 2 [label="5"];
-  1 -> 2 [label="1"];
-  1 -> 3 [label="4"];
-  1 -> 4 [label="0", penwidth=4, color="red"];
-  2 -> 4 [label="2"];
-  3 -> 2 [label="2"];
-  3 -> 5 [label="4"];
-  4 -> 3 [label="2"];
-  4 -> 5 [label="5", penwidth=4, color="red"];
-  {rank = same; 1; 2;}
-  {rank = same; 3; 4;}
-}
+```mermaid
+graph LR
+    0((0))
+    1((1))
+    2((2))
+    3((3))
+    4((4))
+    5((5))
+    0 == "3" ==>1
+    1 -- "1" -->2
+    0 -- "5" -->2
+    1 -- "4" -->3
+    1 == "0" ==>4
+    2 -- "2" -->4
+    3 -- "2" -->2
+    3 -- "4" -->5
+    4 -- "2" -->3
+    4 == "5" ==>5
+    classDef default stroke:black,fill:lightskyblue,color:black
+    linkStyle default color:black
+    linkStyle 0,4,9 stroke:red,stroke-width:2px
 ```
 
 Our goal is to find the shortest path from 0 to 5 (shown in red in the image)
 and its total length.
 
-We solve this using
-[`SimpleOneToOneShortestPath()`](http://cs/symbol:SimpleOneToOneShortestPath)
-from [`bounded_dijkstra.h`](http://cs/file:bounded_dijkstra.h) below:
+We solve this using `SimpleOneToOneShortestPath()` from
+[`bounded_dijkstra.h`](/ortools/graph/bounded_dijkstra.h)
+below:
 
 ```cpp
 // Snippet from ortools/graph/samples/dijkstra_directed.cc
@@ -105,7 +109,7 @@ Shortest path nodes: 0, 1, 4, 5
 
 Below, we give an example showing how to solve a shortest path problem on an
 undirected graph with nonnegative edge lengths. This example can be found at
-[`dijkstra_undirected.cc`](../samples/dijkstra_undirected.cc).
+[`dijkstra_undirected.cc`](/ortools/graph/samples/dijkstra_undirected.cc).
 Consider the undirected graph below:
 
 ```dot
@@ -125,11 +129,11 @@ graph g {
 Our goal is to find the shortest path from 0 to 4 (shown in red in the image)
 and its total length.
 
-Again, we solve this using
-[`SimpleOneToOneShortestPath()`](http://cs/symbol:SimpleOneToOneShortestPath)
-from [`bounded_dijkstra.h`](http://cs/file:bounded_dijkstra.h). Since this
-function only works on **directed graphs**, we simply include two copies of the
-edge when creating the input arcs, one in each direction. The code is below:
+Again, we solve this using `SimpleOneToOneShortestPath()` from
+[`bounded_dijkstra.h`](/ortools/graph/bounded_dijkstra.h).
+Since this function only works on **directed graphs**, we simply include two
+copies of the edge when creating the input arcs, one in each direction. The code
+is below:
 
 ```cpp
 // Snippet from ortools/graph/samples/dijkstra_undirected.cc
@@ -218,17 +222,14 @@ A few variations of this problem can be reduced to this case:
     [above](#undirected-graphs).
 
 We will now show an example solving this problem using
-[`bounded_dijkstra.h`](http://cs/file:bounded_dijkstra.h). Unlike the previous
-examples, we must use the lower level API of
-[`BoundedDijkstraWrapper`](http://cs/symbol:BoundedDijkstraWrapper), which
-requires building a
-[`util::StaticGraph`](http://cs/file:google3/ortools/graph_base/graph.h symbol:StaticGraph)
-to get started. (This was done for us by
-[`SimpleOneToOneShortestPath()`](http://cs/symbol:SimpleOneToOneShortestPath) in
-the above examples).
+[`bounded_dijkstra.h`](/ortools/graph/bounded_dijkstra.h).
+Unlike the previous examples, we must use the lower level API of
+`BoundedDijkstraWrapper`, which requires building a `util::StaticGraph` from
+[`graph.h`](/ortools/graph_base/graph.h) to get started. (This was done
+for us by `SimpleOneToOneShortestPath()` in the above examples).
 
 The example below can be found at
-[`dijkstra_one_to_all.cc`](../samples/dijkstra_one_to_all.cc).
+[`dijkstra_one_to_all.cc`](/ortools/graph/samples/dijkstra_one_to_all.cc).
 
 Consider the directed graph below:
 
@@ -254,7 +255,6 @@ code:
 // Snippet from ortools/graph/samples/dijkstra_one_to_all.cc
 #include <cstdint>
 #include <iostream>
-#include <limits>
 #include <utility>
 #include <vector>
 
@@ -306,10 +306,10 @@ int main(int argc, char** argv) {
 }
 ```
 
-> NOTE: You can use a
-> [`util::ListGraph`](../graph/graph.h symbol:ListGraph)
-> instead of `util::StaticGraph` above, which is simpler as it does not require
-> a `Build()` step and does not permute the edges, but it is slower.
+> NOTE: You can use a `util::ListGraph` from
+> [`graph.h`](/ortools/graph_base/graph.h) instead of `util::StaticGraph`
+> above, which is simpler as it does not require a `Build()` step and does not
+> permute the edges, but it is slower.
 
 Running this code generates the output:
 
@@ -334,7 +334,7 @@ reuse some of the computation between shortest path calculations, and avoid most
 memory allocations. Below, we give an example of how to do this.
 
 The code for this example can be found at
-[`dijkstra_sequential.cc`](../samples/dijkstra_sequential.cc).
+[`dijkstra_sequential.cc`](/ortools/graph/samples/dijkstra_sequential.cc).
 
 This example is on a directed graph. This method also applies for undirected
 problems, using the same technique from our
@@ -411,7 +411,6 @@ The code is below:
 // Snippet from ortools/graph/samples/dijkstra_sequential.cc
 #include <cstdint>
 #include <iostream>
-#include <limits>
 #include <string>
 #include <utility>
 #include <vector>

@@ -16,10 +16,12 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "absl/types/span.h"
 #include "ortools/base/strong_vector.h"
+#include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_mapping.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/integer_base.h"
@@ -83,6 +85,8 @@ class DebugSolution {
   ObjectiveDefinition* objective_def_;
   IntegerEncoder* encoder_;
   std::string name_;
+  mutable std::vector<std::tuple<Literal, IntegerLiteral, IntegerValue>>
+      to_print_scratch_;
 
   bool IsLookingForSolutionBetterThanDebugSolution() const {
     if (inner_objective_value_ == kMinIntegerValue) return false;

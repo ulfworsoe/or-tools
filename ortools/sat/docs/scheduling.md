@@ -28,7 +28,6 @@ Creating these intervals is illustrated in the following code snippets.
 # Snippet from ortools/sat/samples/interval_sample_sat.py
 """Code sample to demonstrates how to build an interval."""
 
-
 from ortools.sat.python import cp_model
 
 
@@ -71,6 +70,7 @@ interval_sample_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"
 
@@ -308,6 +308,7 @@ optional_interval_sample_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"
 
@@ -661,6 +662,7 @@ no_overlap_sample_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "absl/types/span.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"
@@ -1430,6 +1432,7 @@ ranking_sample_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "absl/types/span.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"
@@ -2087,7 +2090,6 @@ need to take into account the case where no task is performed.
 # Snippet from ortools/sat/samples/ranking_circuit_sample_sat.py
 """Code sample to demonstrates how to rank intervals using a circuit."""
 
-
 from collections.abc import Sequence
 
 from ortools.sat.python import cp_model
@@ -2462,7 +2464,8 @@ def overlapping_interval_sample_sat():
 
   # Search and print out all solutions.
   solution_printer = VarArraySolutionPrinter(
-      [start_var_a, start_var_b, a_overlaps_b])
+      [start_var_a, start_var_b, a_overlaps_b]
+  )
   solver.solve(model, solution_printer)
 
 

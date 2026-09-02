@@ -26,6 +26,7 @@
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/container/hash_container_defaults.h"
 
 namespace util {
 namespace graph {
@@ -33,21 +34,27 @@ namespace graph {
 namespace internal {
 
 // Detects if T is hashable with absl::Hash.
+template <typename T>
+using IsHashable =
+    std::is_default_constructible<absl::DefaultHashContainerHash<T>>;
+
 template <typename T, typename = void>
-struct IsHashable : std::false_type {};
+struct DefaultHasher {
+  using type = void;
+};
 
 template <typename T>
-struct IsHashable<
-    T, std::void_t<decltype(std::declval<typename absl::flat_hash_set<
-                                T>::hasher>()(std::declval<const T&>()))>>
-    : std::true_type {};
+struct DefaultHasher<T, std::enable_if_t<IsHashable<T>::value>> {
+  using type = typename absl::flat_hash_set<T>::hasher;
+};
+
 }  // namespace internal
 
-// Selects absl::Hash<T> if possible, otherwise std::less<T>.
+// Selects absl::flat_hash_set<T>::hasher if possible, otherwise std::less<T>.
 template <typename T>
 using PreferHashOrCompare =
     std::conditional_t<internal::IsHashable<T>::value,
-                       typename absl::flat_hash_set<T>::hasher, std::less<T>>;
+                       typename internal::DefaultHasher<T>::type, std::less<T>>;
 
 template <typename T, typename CompareOrHashT = PreferHashOrCompare<T>,
           typename Eq = void>
@@ -57,7 +64,9 @@ struct HashOrTreeContainer {
   template <typename U, typename V, typename E = void>
   struct SelectContainer {
     using Set = absl::btree_set<T, CompareOrHashT>;
-    using MapInt = absl::btree_map<T, int, CompareOrHashT>;
+
+    template <typename ValueT>
+    using Map = absl::btree_map<T, ValueT, CompareOrHashT>;
   };
 
   // Specialization for when U is a hash functor and Eq is void (no custom
@@ -73,7 +82,9 @@ struct HashOrTreeContainer {
                            std::declval<const T&>()))>::value &&
                        std::is_same_v<V, void>>> {
     using Set = absl::flat_hash_set<T, CompareOrHashT>;
-    using MapInt = absl::flat_hash_map<T, int, CompareOrHashT>;
+
+    template <typename ValueT>
+    using Map = absl::flat_hash_map<T, ValueT, CompareOrHashT>;
   };
 
   // Specialization for when U is a hash functor and Eq is provided (not void).
@@ -84,11 +95,19 @@ struct HashOrTreeContainer {
                            std::declval<const T&>()))>::value &&
                        !std::is_same_v<V, void>>> {
     using Set = absl::flat_hash_set<T, CompareOrHashT, Eq>;
-    using MapInt = absl::flat_hash_map<T, int, CompareOrHashT, Eq>;
+
+    template <typename ValueT>
+    using Map = absl::flat_hash_map<T, ValueT, CompareOrHashT, Eq>;
   };
 
   using Set = typename SelectContainer<CompareOrHashT, Eq>::Set;
-  using MapInt = typename SelectContainer<CompareOrHashT, Eq>::MapInt;
+
+  template <typename ValueT>
+  using Map =
+      typename SelectContainer<CompareOrHashT, Eq>::template Map<ValueT>;
+
+  using MapInt =
+      typename SelectContainer<CompareOrHashT, Eq>::template Map<int>;
 };
 
 }  // namespace graph

@@ -18,10 +18,13 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -419,6 +422,10 @@ struct LinearExpression2 {
   IntegerValue DivideByGcd();
 
   bool IsCanonicalized() const;
+  bool IsCanonicalizedAndGcdReduced() const {
+    return IsCanonicalized() &&
+           std::gcd(coeffs[0].value(), coeffs[1].value()) <= 1;
+  }
 
   // Makes sure expr and -expr have the same canonical representation by
   // negating the expression of it is in the non-canonical form. Returns true if
@@ -444,10 +451,7 @@ struct LinearExpression2 {
            coeffs[0] == o.coeffs[0] && coeffs[1] == o.coeffs[1];
   }
 
-  bool operator<(const LinearExpression2& o) const {
-    return std::tie(vars[0], vars[1], coeffs[0], coeffs[1]) <
-           std::tie(o.vars[0], o.vars[1], o.coeffs[0], o.coeffs[1]);
-  }
+  bool operator<(const LinearExpression2& o) const;
 
   IntegerValue coeffs[2];
   IntegerVariable vars[2] = {kNoIntegerVariable, kNoIntegerVariable};

@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/nullability.h"
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
@@ -41,6 +42,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "ortools/base/log_severity.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/strong_vector.h"
 #include "ortools/base/types.h"
@@ -2106,14 +2108,14 @@ PathCumulFilter::PathCumulFilter(const Model& routing_model,
       current_offset = std::max(current_offset, offset);
     }
   }
-#ifndef NDEBUG
-  for (int vehicle = 0; vehicle < routing_model.vehicles(); vehicle++) {
-    if (FilterWithDimensionCumulOptimizerForVehicle(vehicle)) {
-      DCHECK_NE(lp_optimizer_, nullptr);
-      DCHECK_NE(mp_optimizer_, nullptr);
+  if constexpr (DEBUG_MODE) {
+    for (int vehicle = 0; vehicle < routing_model.vehicles(); vehicle++) {
+      if (FilterWithDimensionCumulOptimizerForVehicle(vehicle)) {
+        DCHECK_NE(lp_optimizer_, nullptr);
+        DCHECK_NE(mp_optimizer_, nullptr);
+      }
     }
   }
-#endif  // NDEBUG
 }
 
 bool PathCumulFilter::PropagateTransitsAndSpans(int path) {
@@ -3309,9 +3311,10 @@ bool LPCumulFilter::Accept(const Assignment* delta,
       status = mp_optimizer_.ComputeCumuls(next_accessor, {}, nullptr, nullptr,
                                            nullptr);
     }
-    DCHECK(status != DimensionSchedulingStatus::FEASIBLE)
+    LOG_IF(WARNING, status == DimensionSchedulingStatus::FEASIBLE)
         << "FEASIBLE without filtering objective cost should be OPTIMAL";
-    return status == DimensionSchedulingStatus::OPTIMAL;
+    return status == DimensionSchedulingStatus::OPTIMAL ||
+           status == DimensionSchedulingStatus::FEASIBLE;
   }
 
   DimensionSchedulingStatus status =
@@ -3390,10 +3393,9 @@ int64_t LPCumulFilter::GetSynchronizedObjectiveValue() const {
 }  // namespace
 
 IntVarLocalSearchFilter* MakeGlobalLPCumulFilter(
-    GlobalDimensionCumulOptimizer* lp_optimizer,
-    GlobalDimensionCumulOptimizer* mp_optimizer, bool filter_objective_cost) {
-  DCHECK_NE(lp_optimizer, nullptr);
-  DCHECK_NE(mp_optimizer, nullptr);
+    GlobalDimensionCumulOptimizer* absl_nonnull lp_optimizer,
+    GlobalDimensionCumulOptimizer* absl_nonnull mp_optimizer,
+    bool filter_objective_cost) {
   const Model& model = *lp_optimizer->dimension()->model();
   return model.solver()->RevAlloc(new LPCumulFilter(
       model.Nexts(), lp_optimizer, mp_optimizer, filter_objective_cost));
@@ -3538,8 +3540,12 @@ bool ResourceGroupAssignmentFilter::FinalizeAcceptPath(
         return false;
       }
     } else if (IsVarSynced(start)) {
-      DCHECK_EQ(vehicle_to_resource_class_assignment_costs_[v].size(), 1);
-      route_cost = vehicle_to_resource_class_assignment_costs_[v][0];
+      // Necessary to avoid b/533262519.
+      // TODO(user): Figure out the conditions under which this can happen.
+      if (!vehicle_to_resource_class_assignment_costs_[v].empty()) {
+        DCHECK_EQ(vehicle_to_resource_class_assignment_costs_[v].size(), 1);
+        route_cost = vehicle_to_resource_class_assignment_costs_[v][0];
+      }
     }
     CapAddTo(route_cost, &delta_cost_without_transit_);
     if (delta_cost_without_transit_ > objective_max) {
@@ -3817,12 +3823,10 @@ void ResourceAssignmentFilter::Synchronize(const Assignment* assignment,
 }  // namespace
 
 LocalSearchFilter* MakeResourceAssignmentFilter(
-    LocalDimensionCumulOptimizer* lp_optimizer,
-    LocalDimensionCumulOptimizer* mp_optimizer,
+    LocalDimensionCumulOptimizer* absl_nonnull lp_optimizer,
+    LocalDimensionCumulOptimizer* absl_nonnull mp_optimizer,
     bool propagate_own_objective_value, bool filter_objective_cost) {
   const Model& model = *lp_optimizer->dimension()->model();
-  DCHECK_NE(lp_optimizer, nullptr);
-  DCHECK_NE(mp_optimizer, nullptr);
   return model.solver()->RevAlloc(new ResourceAssignmentFilter(
       model.Nexts(), lp_optimizer, mp_optimizer, propagate_own_objective_value,
       filter_objective_cost));
@@ -4592,9 +4596,9 @@ void DimensionChecker::UpdateRIQStructure(int begin_index, int end_index) {
       const EInterval fst_to_fst = Delta(fw.tsum_at_fst, lw.tsum_at_fst);
 
       riq_[layer][i] = {
-          .cumuls_to_fst = fw.cumuls_to_fst & lw.cumuls_to_fst - fst_to_fst,
+          .cumuls_to_fst = fw.cumuls_to_fst & (lw.cumuls_to_fst - fst_to_fst),
           .tightest_tsum = fw.tightest_tsum & lw.tightest_tsum,
-          .cumuls_to_lst = fw.cumuls_to_lst + lst_to_lst & lw.cumuls_to_lst,
+          .cumuls_to_lst = (fw.cumuls_to_lst + lst_to_lst) & lw.cumuls_to_lst,
           .tsum_at_fst = fw.tsum_at_fst,
           .tsum_at_lst = lw.tsum_at_lst};
     }

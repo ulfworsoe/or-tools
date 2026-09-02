@@ -67,7 +67,7 @@ final class Variables {
   Variable addVariable(String name) {
     return addVariable(
         /* lowerBound= */ Double.NEGATIVE_INFINITY,
-        /*upperBound=*/Double.POSITIVE_INFINITY,
+        /* upperBound= */ Double.POSITIVE_INFINITY,
         /* isInteger= */ false, name);
   }
 

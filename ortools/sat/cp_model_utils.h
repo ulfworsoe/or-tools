@@ -68,6 +68,23 @@ inline int EnforcementLiteral(const ConstraintProto& ct) {
   return ct.enforcement_literal(0);
 }
 
+struct AffineExpr {
+  int var;  // The variable in the CpModelProto.
+  int64_t coeff;
+  int64_t offset;
+
+  bool operator==(const AffineExpr& o) const {
+    return var == o.var && coeff == o.coeff && offset == o.offset;
+  }
+  bool operator!=(const AffineExpr& o) const { return !(*this == o); }
+  template <typename H>
+  friend H AbslHashValue(H h, const AffineExpr& expr) {
+    return H::combine(std::move(h), expr.var, expr.coeff, expr.offset);
+  }
+};
+
+AffineExpr GetAffineExpr(const LinearExpressionProto& expr);
+
 // Returns the gcd of the given LinearExpressionProto.
 // Specifying the second argument will take the gcd with it.
 int64_t LinearExpressionGcd(const LinearExpressionProto& expr, int64_t gcd = 0);
@@ -203,17 +220,6 @@ inline double ScaleObjectiveValue(const CpObjectiveProto& proto,
   return proto.scaling_factor() * result;
 }
 
-// Similar to ScaleObjectiveValue() but uses the integer version.
-inline int64_t ScaleInnerObjectiveValue(const CpObjectiveProto& proto,
-                                        int64_t value) {
-  if (proto.integer_scaling_factor() == 0) {
-    return value + proto.integer_before_offset();
-  }
-  return (value + proto.integer_before_offset()) *
-             proto.integer_scaling_factor() +
-         proto.integer_after_offset();
-}
-
 // Removes the objective scaling and offset from the given value.
 inline double UnscaleObjectiveValue(const CpObjectiveProto& proto,
                                     double value) {
@@ -224,6 +230,31 @@ inline double UnscaleObjectiveValue(const CpObjectiveProto& proto,
   return result - proto.offset();
 }
 
+// Transforms an inner objective value to an "outer" one (original value before
+// presolve). Note that the "outer" objective here refers to the integer
+// expression of the objective before presolve, but not counting the objective
+// offset and/or scaling. So this is not completely in the user-domain.
+inline int64_t PostsolveInnerObjectiveValue(const CpObjectiveProto& proto,
+                                            int64_t value) {
+  if (proto.integer_scaling_factor() == 0) {
+    return value + proto.integer_before_offset();
+  }
+  return (value + proto.integer_before_offset()) *
+             proto.integer_scaling_factor() +
+         proto.integer_after_offset();
+}
+
+// Inverse of PostsolveInnerObjectiveValue(). See the comments above.
+inline int64_t PresolveInnerObjectiveValue(const CpObjectiveProto& proto,
+                                           int64_t value) {
+  if (proto.integer_scaling_factor() == 0) {
+    return value - proto.integer_before_offset();
+  }
+  return (value - proto.integer_after_offset()) /
+             proto.integer_scaling_factor() -
+         proto.integer_before_offset();
+}
+
 // Computes the "inner" objective of a response that contains a solution.
 // This is the objective without offset and scaling. Call ScaleObjectiveValue()
 // to get the user facing objective.
@@ -231,6 +262,7 @@ int64_t ComputeInnerObjective(const CpObjectiveProto& objective,
                               absl::Span<const int64_t> solution);
 
 // Returns true if a linear expression can be reduced to a single ref.
+// That is -var or +var.
 bool ExpressionContainsSingleRef(const LinearExpressionProto& expr);
 
 // Checks if the expression is affine or constant.
@@ -291,10 +323,19 @@ bool SafeAddLinearExpressionToLinearConstraint(
 // Returns if a constraint is of the form y = lin_max(x, -x).
 bool IsAffineIntAbs(const ConstraintProto& ct);
 
-// Returns true iff a == b * b_scaling.
+// Returns true iff a == b * b_scaling. Note that this rely on a hash-map and
+// does not care about the order of the terms.
 bool LinearExpressionProtosAreEqual(const LinearExpressionProto& a,
                                     const LinearExpressionProto& b,
                                     int64_t b_scaling = 1);
+
+// Contrary to LinearExpressionProtosAreEqual(), this does not use hash_map.
+inline bool LinearExpressionProtosAreExactlyEqual(
+    const LinearExpressionProto& a, const LinearExpressionProto& b) {
+  return absl::MakeSpan(a.vars()) == absl::MakeSpan(b.vars()) &&
+         absl::MakeSpan(a.coeffs()) == absl::MakeSpan(b.coeffs()) &&
+         a.offset() == b.offset();
+}
 
 // Returns true if there exactly one variable appearing in all the expressions.
 template <class ExpressionList>
@@ -455,6 +496,10 @@ int CombineSeed(int base_seed, int64_t delta);
 // The largest possible value of ConstraintProto::constraint_case.
 constexpr ConstraintProto::ConstraintCase kLargestConstraintType =
     ConstraintProto::ConstraintCase::kDummyConstraint;
+
+// kLargestConstraintType should be less than 2^kConstraintTypeBitSize.
+constexpr int kConstraintTypeBitSize = 5;
+static_assert(kLargestConstraintType < (1 << kConstraintTypeBitSize));
 
 }  // namespace sat
 }  // namespace operations_research

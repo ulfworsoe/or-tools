@@ -5,11 +5,12 @@
 Below, we give several examples of how to solve shortest path problems on
 directed and undirected graphs with **unit arc/edge lengths** (all edges/arcs
 have length one) using breadth first search (BFS). These examples use the
-functions and classes defined in [`bfs.h`](../graph/bfs.h).
+functions and classes defined in [`bfs.h`](/ortools/graph_base/bfs.h).
 This is a special case of shortest path with nonnegative edge lengths (as
 discussed with [Dijkstra's Algorithm](shortest_path_dijkstra.md)) that we can
 solve more quickly with breadth first search. Specifically, for a directed graph
 $$G = (N, A)$$ with nodes $$N$$ and arcs $$A$$, these algorithms run in $$O(|N|
+
 + |A|)$$. A forthcoming page will help you determine if the methods in this page
 (based on BFS) are best for your problem.
 
@@ -17,7 +18,7 @@ $$G = (N, A)$$ with nodes $$N$$ and arcs $$A$$, these algorithms run in $$O(|N|
 
 Below, we give an example showing how to solve a shortest path problem on a
 directed graph with unit arc lengths. This example can be found at
-[`bfs_directed.cc`](http://google3/third_party/ortools/ortools/graph_base/samples/bfs_directed.cc).
+[`bfs_directed.cc`](/ortools/graph_base/samples/bfs_directed.cc).
 Consider the directed graph below:
 
 ```dot
@@ -40,9 +41,8 @@ digraph d {
 Our goal is to find the shortest path from 0 to 5 (shown in red in the image)
 and its total length.
 
-We solve this using [`GetBFSRootedTree()`](http://cs/symbol:GetBFSRootedTree)
-and [`GetBFSShortestPath()`](http://cs/symbol:GetBFSShortestPath) and from
-[`bfs.h`](../graph/bfs.h) below:
+We solve this using `GetBFSRootedTree()` and `GetBFSShortestPath()` and from
+[`bfs.h`](/ortools/graph_base/bfs.h) below:
 
 ```cpp
 // Snippet from ortools/graph_base/samples/bfs_directed.cc
@@ -53,7 +53,7 @@ and [`GetBFSShortestPath()`](http://cs/symbol:GetBFSShortestPath) and from
 #include "ortools/base/init_google.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "ortools/base/status_macros.h"
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_join.h"
 #include "ortools/graph_base/bfs.h"
 
@@ -75,10 +75,10 @@ absl::Status Main() {
   // Solve the shortest path problem from 0 to 5.
   const int source = 0;
   const int terminal = 5;
-  OR_ASSIGN_OR_RETURN(
+  ABSL_ASSIGN_OR_RETURN(
       const std::vector<int> bfs_tree,
       util::graph::GetBFSRootedTree(adjacency_list, num_nodes, source));
-  OR_ASSIGN_OR_RETURN(const std::vector<int> shortest_path,
+  ABSL_ASSIGN_OR_RETURN(const std::vector<int> shortest_path,
                         util::graph::GetBFSShortestPath(bfs_tree, terminal));
 
   // Print to length of the path and then the nodes in the path.
@@ -110,7 +110,7 @@ Shortest path nodes: 0, 2, 5
 
 Below, we give an example showing how to solve a shortest path problem on a
 undirected graph with unit arc lengths. This example can be found at
-[`bfs_undirected.cc`](http://cs/file:ortools/graph_base/samples/bfs_directed.cc).
+[`bfs_undirected.cc`](/ortools/graph_base/samples/bfs_directed.cc).
 Consider the directed graph below:
 
 ```dot
@@ -127,12 +127,10 @@ graph d {
 Our goal is to find the shortest path from 0 to 3 (shown in red in the image) as
 measured by the number of edges.
 
-Again, we solve this using
-[`GetBFSRootedTree()`](http://cs/symbol:GetBFSRootedTree) and
-[`GetBFSShortestPath()`](http://cs/symbol:GetBFSShortestPath) and from
-[`bfs.h`](../graph/bfs.h). Since these functions only work on
-**directed graphs**, we simply include two copies of the edge when creating the
-input arcs, one in each direction. The code is below:
+Again, we solve this using `GetBFSRootedTree()` and `GetBFSShortestPath()` and
+from [`bfs.h`](/ortools/graph_base/bfs.h). Since these functions only work
+on **directed graphs**, we simply include two copies of the edge when creating
+the input arcs, one in each direction. The code is below:
 
 ```cpp
 // Snippet from ortools/graph_base/samples/bfs_undirected.cc
@@ -143,7 +141,7 @@ input arcs, one in each direction. The code is below:
 #include "ortools/base/init_google.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "ortools/base/status_macros.h"
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_join.h"
 #include "ortools/graph_base/bfs.h"
 
@@ -167,10 +165,10 @@ absl::Status Main() {
   // Solve the shortest path problem from 0 to 3.
   const int source = 0;
   const int terminal = 3;
-  OR_ASSIGN_OR_RETURN(
+  ABSL_ASSIGN_OR_RETURN(
       const std::vector<int> bfs_tree,
       util::graph::GetBFSRootedTree(adjacency_list, num_nodes, source));
-  OR_ASSIGN_OR_RETURN(const std::vector<int> shortest_path,
+  ABSL_ASSIGN_OR_RETURN(const std::vector<int> shortest_path,
                         util::graph::GetBFSShortestPath(bfs_tree, terminal));
 
   // Print to length of the path and then the nodes in the path.
@@ -214,13 +212,11 @@ A few variations of this problem can be reduced to this case:
 *   For *undirected* graphs, double the edges as done
     [above](#undirected-graphs).
 
-Again, we solve this using
-[`GetBFSRootedTree()`](http://cs/symbol:GetBFSRootedTree) and
-[`GetBFSShortestPath()`](http://cs/symbol:GetBFSShortestPath) and from
-[`bfs.h`](../graph/bfs.h).
+Again, we solve this using `GetBFSRootedTree()` and `GetBFSShortestPath()` and
+from [`bfs.h`](/ortools/graph_base/bfs.h).
 
 The example below can be found at
-[`bfs_one_to_all.cc`](http://google3/third_party/ortools/ortools/graph_base/samples/bfs_one_to_all.cc).
+[`bfs_one_to_all.cc`](/ortools/graph_base/samples/bfs_one_to_all.cc).
 
 Consider the directed graph below:
 
@@ -251,7 +247,7 @@ code:
 #include "ortools/base/init_google.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "ortools/base/status_macros.h"
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_join.h"
 #include "ortools/graph_base/bfs.h"
 
@@ -272,18 +268,18 @@ absl::Status Main() {
 
   // Compute the shortest path from 0 to each reachable node.
   const int source = 0;
-  OR_ASSIGN_OR_RETURN(
+  ABSL_ASSIGN_OR_RETURN(
       const std::vector<int> bfs_tree,
       util::graph::GetBFSRootedTree(adjacency_list, num_nodes, source));
   // Runs in O(num nodes). Nodes that are not reachable have distance -1.
-  OR_ASSIGN_OR_RETURN(const std::vector<int> node_distances,
+  ABSL_ASSIGN_OR_RETURN(const std::vector<int> node_distances,
                         util::graph::GetBFSDistances(bfs_tree));
   for (int t = 0; t < num_nodes; ++t) {
     if (t == source) {
       continue;
     }
     if (node_distances[t] >= 0) {
-      OR_ASSIGN_OR_RETURN(const std::vector<int> shortest_path,
+      ABSL_ASSIGN_OR_RETURN(const std::vector<int> shortest_path,
                             util::graph::GetBFSShortestPath(bfs_tree, t));
       std::cout << "Shortest path from 0 to " << t
                 << " has length: " << node_distances[t] << std::endl;

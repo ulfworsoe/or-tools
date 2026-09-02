@@ -20,6 +20,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//bazel:compilation_flags.bzl", "SAFE_FP_CODE")
+load("//ortools/copts:configure_copts.bzl", "ORTOOLS_DEFAULT_COPTS", "ORTOOLS_DEFAULT_LINKOPTS", "ORTOOLS_TEST_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -166,8 +167,29 @@ py_proto_library(
     deps = [":linear_solver_proto"],
 )
 
+proto_library(
+    name = "iis_proto",
+    srcs = ["iis.proto"],
+    deps = ["//ortools/util:status_proto"],
+)
+
+cc_proto_library(
+    name = "iis_cc_proto",
+    deps = [":iis_proto"],
+)
+
+java_proto_library(
+    name = "iis_java_proto",
+    deps = [":iis_proto"],
+)
+
+py_proto_library(
+    name = "iis_py_pb2",
+    deps = [":iis_proto"],
+)
+
 cc_library(
-    name = "linear_solver_base",
+    name = "linear_solver_lib",
     srcs = [
         "linear_expr.cc",
         "linear_solver.cc",
@@ -176,7 +198,8 @@ cc_library(
         "linear_expr.h",
         "linear_solver.h",
     ],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":linear_solver_callback",
         ":linear_solver_cc_proto",
@@ -194,6 +217,7 @@ cc_library(
         "//ortools/port:proto_utils",
         "//ortools/util:fp_utils",
         "//ortools/util:lazy_mutable_copy",
+        "//ortools/util:status_streaming",
         "//ortools/util:testing_utils",
         "//ortools/util:time_limit",
         "@abseil-cpp//absl/base:core_headers",
@@ -217,13 +241,15 @@ cc_library(
 # following target.
 cc_library(
     name = "linear_solver",
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     tags = [
         "not_build:arm",
         "not_run:arm",
     ],
     deps = [
-        ":linear_solver_base",
         ":linear_solver_cc_proto",
+        ":linear_solver_lib",
         "//ortools/base",
         "//ortools/linear_solver/proto_solver:proto_utils",
         "//ortools/linear_solver/proto_solver:sat_proto_solver",
@@ -277,14 +303,16 @@ cc_library(
 cc_library(
     name = "linear_solver_xpress",
     srcs = ["xpress_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_xpress": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
         ":linear_solver_callback",
+        ":linear_solver_lib",
+        "//ortools/base:mathutil",
         "//ortools/base:timer",
         "//ortools/third_party_solvers:xpress_environment",
         "@abseil-cpp//absl/algorithm:container",
@@ -303,10 +331,11 @@ cc_library(
 cc_test(
     name = "xpress_interface_test",
     srcs = ["xpress_interface_test.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
-        ":linear_solver_base",
         ":linear_solver_callback",
+        ":linear_solver_lib",
         "//ortools/base:gmock",
         "//ortools/base:log_severity",
         "//ortools/third_party_solvers:xpress_environment",
@@ -320,12 +349,13 @@ cc_test(
 cc_library(
     name = "linear_solver_cplex",
     srcs = ["cplex_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_cplex": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":linear_solver_base"],
+    deps = [":linear_solver_lib"],
     alwayslink = 1,  # Important! Library is used via dependency injection.
 )
 
@@ -333,14 +363,15 @@ cc_library(
 cc_library(
     name = "linear_solver_glop",
     srcs = ["glop_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_glop": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
         ":glop_utils",
-        ":linear_solver_base",
+        ":linear_solver_lib",
         "//ortools/glop:lp_solver",
         "//ortools/glop:parameters_cc_proto",
         "//ortools/linear_solver/proto_solver:glop_proto_solver",
@@ -363,13 +394,14 @@ cc_library(
 cc_library(
     name = "linear_solver_clp",
     srcs = ["clp_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_clp": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
+        ":linear_solver_lib",
         "//ortools/base:timer",
         "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/log:check",
@@ -384,8 +416,10 @@ cc_library(
     name = "scip_callback",
     srcs = ["scip_callback.cc"],
     hdrs = ["scip_callback.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
-        ":linear_solver_base",
+        ":linear_solver_lib",
         ":scip_helper_macros",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
@@ -403,15 +437,16 @@ cc_library(
 cc_library(
     name = "linear_solver_scip",
     srcs = ["scip_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_scip": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
         ":linear_solver_callback",
         ":linear_solver_cc_proto",
+        ":linear_solver_lib",
         ":scip_callback",
         ":scip_helper_macros",
         "//ortools/base:timer",
@@ -438,13 +473,14 @@ cc_library(
 cc_library(
     name = "linear_solver_glpk",
     srcs = ["glpk_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_glpk": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
+        ":linear_solver_lib",
         "//ortools/base:timer",
         "//ortools/third_party_solvers/glpk:glpk_env_deleter",
         "@abseil-cpp//absl/base:core_headers",
@@ -460,13 +496,14 @@ cc_library(
 cc_library(
     name = "linear_solver_cbc",
     srcs = ["cbc_interface.cc"],
-    copts = ["-fexceptions"] + SAFE_FP_CODE,
+    copts = ["-fexceptions"] + SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_cbc": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
+        ":linear_solver_lib",
         "//ortools/base:timer",
         "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/log:check",
@@ -479,7 +516,8 @@ cc_library(
 cc_library(
     name = "linear_solver_gurobi",
     srcs = ["gurobi_interface.cc"],
-    copts = SAFE_FP_CODE,
+    copts = SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     tags = [
         "not_build:arm",
         "not_run:arm",
@@ -490,12 +528,13 @@ cc_library(
     }),
     deps = [
         ":gurobi_util",
-        ":linear_solver_base",
         ":linear_solver_callback",
+        ":linear_solver_lib",
         "//ortools/base:timer",
         "//ortools/linear_solver/proto_solver:gurobi_proto_solver",
         "//ortools/linear_solver/proto_solver:proto_utils",
         "//ortools/util:lazy_mutable_copy",
+        "//ortools/util:status_streaming",
         "//ortools/util:time_limit",
         "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/container:flat_hash_map",
@@ -516,16 +555,18 @@ cc_library(
     name = "gurobi_util",
     srcs = ["gurobi_util.cc"],
     hdrs = ["gurobi_util.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     tags = [
         "not_build:arm",
         "not_run:arm",
     ],
     deps = [
-        "//ortools/base:status_macros",
         "//ortools/third_party_solvers:gurobi_environment",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_macros",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:str_format",
@@ -537,12 +578,14 @@ cc_library(
 cc_library(
     name = "linear_solver_bop",
     srcs = ["bop_interface.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_bop": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
+        ":linear_solver_lib",
         "//ortools/bop:bop_parameters_cc_proto",
         "//ortools/bop:integral_solver",
         "@abseil-cpp//absl/base:core_headers",
@@ -555,13 +598,15 @@ cc_library(
 cc_library(
     name = "linear_solver_sat",
     srcs = ["sat_interface.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_cp_sat": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
         ":linear_solver_cc_proto",
+        ":linear_solver_lib",
         "//ortools/linear_solver/proto_solver:proto_utils",
         "//ortools/linear_solver/proto_solver:sat_proto_solver",
         "//ortools/port:proto_utils",
@@ -580,13 +625,15 @@ cc_library(
 cc_library(
     name = "linear_solver_pdlp",
     srcs = ["pdlp_interface.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_pdlp": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
         ":linear_solver_cc_proto",
+        ":linear_solver_lib",
         "//ortools/linear_solver/proto_solver:pdlp_proto_solver",
         "//ortools/linear_solver/proto_solver:proto_utils",
         "//ortools/pdlp:solve_log_cc_proto",
@@ -606,13 +653,15 @@ cc_library(
 cc_library(
     name = "linear_solver_highs",
     srcs = ["highs_interface.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     target_compatible_with = select({
         ":use_highs": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":linear_solver_base",
         ":linear_solver_cc_proto",
+        ":linear_solver_lib",
         "//ortools/linear_solver/proto_solver:highs_proto_solver",
         "//ortools/linear_solver/proto_solver:proto_utils",
         "//ortools/util:lazy_mutable_copy",
@@ -629,6 +678,8 @@ cc_library(
     name = "linear_solver_callback",
     srcs = ["linear_solver_callback.cc"],
     hdrs = ["linear_solver_callback.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/log",
@@ -640,8 +691,10 @@ cc_library(
     name = "glop_utils",
     srcs = ["glop_utils.cc"],
     hdrs = ["glop_utils.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
-        ":linear_solver_base",
+        ":linear_solver_lib",
         "//ortools/lp_data:lp_types",
         "@abseil-cpp//absl/functional:overload",
         "@abseil-cpp//absl/log",
@@ -653,15 +706,17 @@ cc_library(
     name = "model_exporter",
     srcs = ["model_exporter.cc"],
     hdrs = ["model_exporter.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":linear_solver_cc_proto",
         "//ortools/base:file",
-        "//ortools/base:status_macros",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_macros",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:str_format",
@@ -674,7 +729,8 @@ cc_library(
     name = "model_validator",
     srcs = ["model_validator.cc"],
     hdrs = ["model_validator.h"],
-    copts = SAFE_FP_CODE,
+    copts = SAFE_FP_CODE + ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":linear_solver_cc_proto",
         "//ortools/base:accurate_sum",
@@ -698,6 +754,8 @@ cc_library(
 cc_binary(
     name = "solve",
     srcs = ["solve.cc"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     tags = [
         "not_build:arm",
         "not_run:arm",
@@ -732,14 +790,16 @@ cc_library(
     name = "scip_helper_macros",
     srcs = ["scip_helper_macros.cc"],
     hdrs = ["scip_helper_macros.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base:status_builder",
-        "//ortools/base:status_macros",
         "@abseil-cpp//absl/base",
         "@abseil-cpp//absl/base:nullability",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_macros",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/strings:string_view",
         "@scip",
@@ -750,6 +810,8 @@ cc_library(
     name = "solve_mp_model",
     srcs = ["solve_mp_model.cc"],
     hdrs = ["solve_mp_model.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":linear_solver",
         ":linear_solver_cc_proto",
@@ -764,14 +826,16 @@ cc_library(
 # or-core-team@google.com.
 cc_library(
     name = "linear_solver_all",
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
-        ":linear_solver_base",
         ":linear_solver_bop",
         ":linear_solver_cbc",
         ":linear_solver_clp",
         ":linear_solver_glop",
         ":linear_solver_glpk",
         ":linear_solver_highs",
+        ":linear_solver_lib",
         ":linear_solver_pdlp",
         ":linear_solver_sat",
         ":linear_solver_scip",
@@ -782,6 +846,8 @@ cc_library(
 cc_library(
     name = "model_exporter_swig_helper",
     hdrs = ["model_exporter_swig_helper.h"],
+    copts = ORTOOLS_DEFAULT_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         ":linear_solver_cc_proto",
         ":model_exporter",

@@ -1877,13 +1877,21 @@ bool ScaleAndSetObjective(const SatParameters& params,
                "objective value might be off.");
   }
 
+  const int64_t mult = maximize ? -1 : 1;
+  const double new_offset = objective_offset * scaling_factor / gcd * mult;
+  const double new_scaling_factor = 1.0 / scaling_factor * gcd * mult;
+  if (!std::isfinite(new_offset) || !std::isfinite(new_scaling_factor)) {
+    LOG(ERROR)
+        << "Non-finite offset or scaling factor while scaling objective!";
+    return false;
+  }
+
   // Note that here we set the scaling factor for the inverse operation of
   // getting the "true" objective value from the scaled one. Hence the
   // inverse.
   auto* objective_proto = cp_model->mutable_objective();
-  const int64_t mult = maximize ? -1 : 1;
-  objective_proto->set_offset(objective_offset * scaling_factor / gcd * mult);
-  objective_proto->set_scaling_factor(1.0 / scaling_factor * gcd * mult);
+  objective_proto->set_offset(new_offset);
+  objective_proto->set_scaling_factor(new_scaling_factor);
   for (int i = 0; i < coefficients.size(); ++i) {
     const int64_t value =
         static_cast<int64_t>(std::round(coefficients[i] * scaling_factor)) /
@@ -1944,7 +1952,7 @@ double ComputeTrueObjectiveLowerBound(
   glop_parameters.set_max_number_of_iterations(100 * proto.variables().size());
   glop_parameters.set_change_status_to_imprecise(false);
   solver.SetParameters(glop_parameters);
-  const glop::SolveStatus& status = solver.SolveWithDetails(lp);
+  const glop::SolveStatus& status = solver.Solve(lp);
   if (status.Is<glop::SolveStatus::Optimal>()) {
     return solver.GetObjectiveValue();
   }

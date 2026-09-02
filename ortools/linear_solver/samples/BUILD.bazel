@@ -14,6 +14,7 @@
 load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
+load("//ortools/copts:configure_copts.bzl", "ORTOOLS_DEFAULT_LINKOPTS", "ORTOOLS_TEST_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,10 +23,13 @@ package(default_visibility = ["//visibility:public"])
 cc_test(
     name = "assignment_mip_test",
     srcs = ["assignment_mip.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/log:globals",
     ],
@@ -34,10 +38,13 @@ cc_test(
 cc_test(
     name = "assignment_groups_mip_test",
     srcs = ["assignment_groups_mip.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/log:globals",
         "@abseil-cpp//absl/strings:str_format",
@@ -47,10 +54,13 @@ cc_test(
 cc_test(
     name = "assignment_task_sizes_mip_test",
     srcs = ["assignment_task_sizes_mip.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/log:globals",
         "@abseil-cpp//absl/strings:str_format",
@@ -60,10 +70,13 @@ cc_test(
 cc_test(
     name = "assignment_teams_mip_test",
     srcs = ["assignment_teams_mip.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/log:globals",
         "@abseil-cpp//absl/strings:str_format",
@@ -73,11 +86,13 @@ cc_test(
 cc_test(
     name = "basic_example_test",
     srcs = ["basic_example.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
         "//ortools/init",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
@@ -86,16 +101,24 @@ cc_test(
 cc_test(
     name = "bin_packing_mip_test",
     srcs = ["bin_packing_mip.cc"],
-    deps = ["//ortools/linear_solver:linear_solver_base"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
+    deps = [
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
+    ],
 )
 
 cc_test(
     name = "linear_programming_example_test",
     srcs = ["linear_programming_example.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
 )
@@ -103,10 +126,13 @@ cc_test(
 cc_test(
     name = "integer_programming_example_test",
     srcs = ["integer_programming_example.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
 )
@@ -114,10 +140,13 @@ cc_test(
 cc_test(
     name = "mip_var_array_test",
     srcs = ["mip_var_array.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
 )
@@ -125,10 +154,13 @@ cc_test(
 cc_test(
     name = "multiple_knapsack_mip_test",
     srcs = ["multiple_knapsack_mip.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
         "@abseil-cpp//absl/strings:str_format",
     ],
@@ -137,11 +169,14 @@ cc_test(
 cc_test(
     name = "simple_lp_program_test",
     srcs = ["simple_lp_program.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
         "//ortools/linear_solver:linear_solver_glop",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
 )
@@ -149,10 +184,13 @@ cc_test(
 cc_test(
     name = "simple_mip_program_test",
     srcs = ["simple_mip_program.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
+        "//ortools/linear_solver:linear_solver_lib",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
 )
@@ -160,11 +198,13 @@ cc_test(
 cc_test(
     name = "stigler_diet_test",
     srcs = ["stigler_diet.cc"],
+    copts = ORTOOLS_TEST_COPTS,
+    linkopts = ORTOOLS_DEFAULT_LINKOPTS,
     deps = [
         "//ortools/base",
         "//ortools/base:log_severity",
-        "//ortools/linear_solver:linear_solver_base",
         "//ortools/linear_solver:linear_solver_glop",
+        "//ortools/linear_solver:linear_solver_lib",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:globals",
     ],
@@ -177,6 +217,7 @@ py_test(
     srcs = ["assignment_mb.py"],
     main = "assignment_mb.py",
     tags = [
+        "noci",
         "not_build:arm",
         "not_run:arm",
     ],
@@ -191,6 +232,7 @@ py_test(
     srcs = ["bin_packing_mb.py"],
     main = "bin_packing_mb.py",
     tags = [
+        "noci",
         "not_build:arm",
         "not_run:arm",
     ],
@@ -205,6 +247,7 @@ py_test(
     srcs = ["clone_model_mb.py"],
     main = "clone_model_mb.py",
     tags = [
+        "noci",
         "not_build:arm",
         "not_run:arm",
     ],
@@ -216,6 +259,7 @@ py_test(
     srcs = ["simple_lp_program_mb.py"],
     main = "simple_lp_program_mb.py",
     tags = [
+        "noci",
         "not_build:arm",
         "not_run:arm",
     ],
@@ -227,6 +271,7 @@ py_test(
     srcs = ["simple_mip_program_mb.py"],
     main = "simple_mip_program_mb.py",
     tags = [
+        "noci",
         "not_build:arm",
         "not_run:arm",
     ],

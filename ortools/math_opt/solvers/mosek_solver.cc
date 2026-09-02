@@ -42,7 +42,7 @@
 #include "absl/types/span.h"
 #include "ortools/base/protoutil.h"
 #include "ortools/base/status_builder.h"
-#include "ortools/base/status_macros.h"
+//#include "ortools/base/status_macros.h"
 #include "ortools/math_opt/callback.pb.h"
 #include "ortools/math_opt/core/empty_bounds.h"
 #include "ortools/math_opt/core/inverted_bounds.h"
@@ -535,18 +535,18 @@ absl::StatusOr<bool> MosekSolver::Update(const ModelUpdateProto& model_update) {
         }
     }
 
-    OR_RETURN_IF_ERROR(AddVariables(model_update.new_variables()));
-    OR_RETURN_IF_ERROR(UpdateVariables(model_update.variable_updates()));
-    OR_RETURN_IF_ERROR(AddConstraints(model_update.new_linear_constraints()));
-    OR_RETURN_IF_ERROR(
+    ABSL_RETURN_IF_ERROR(AddVariables(model_update.new_variables()));
+    ABSL_RETURN_IF_ERROR(UpdateVariables(model_update.variable_updates()));
+    ABSL_RETURN_IF_ERROR(AddConstraints(model_update.new_linear_constraints()));
+    ABSL_RETURN_IF_ERROR(
         UpdateConstraints(model_update.linear_constraint_updates(),
                             model_update.linear_constraint_matrix_updates()));
 
-    OR_RETURN_IF_ERROR(UpdateObjective(model_update.objective_updates()));
+    ABSL_RETURN_IF_ERROR(UpdateObjective(model_update.objective_updates()));
 
-    OR_RETURN_IF_ERROR(AddConicConstraints(
+    ABSL_RETURN_IF_ERROR(AddConicConstraints(
         model_update.second_order_cone_constraint_updates().new_constraints()));
-    OR_RETURN_IF_ERROR(AddIndicatorConstraints(
+    ABSL_RETURN_IF_ERROR(AddIndicatorConstraints(
         model_update.indicator_constraint_updates().new_constraints()));
     return true;
 }
@@ -676,7 +676,7 @@ absl::Status MosekSolver::UpdateConstraint(const SecondOrderConeConstraintUpdate
         }
     }
 
-    OR_RETURN_IF_ERROR(AddConicConstraints(conupds.new_constraints()));
+    ABSL_RETURN_IF_ERROR(AddConicConstraints(conupds.new_constraints()));
 
     return absl::OkStatus();
 }
@@ -695,7 +695,7 @@ absl::Status MosekSolver::UpdateConstraint(const IndicatorConstraintUpdatesProto
         }
     }
 
-    OR_RETURN_IF_ERROR(AddIndicatorConstraints(conupds.new_constraints()));
+    ABSL_RETURN_IF_ERROR(AddIndicatorConstraints(conupds.new_constraints()));
 
     return absl::OkStatus();
 }
@@ -708,7 +708,7 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(const ModelPro
     if (0 != MSK::initialize_library()) {
         return absl::InvalidArgumentError("Mosek is not correctly installed.");
     }
-    OR_RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
+    ABSL_RETURN_IF_ERROR(ModelIsSupported(model, kMosekSupportedStructures, "Mosek"));
 
     if (!model.auxiliary_objectives().empty())
         return ortools::InvalidArgumentErrorBuilder()
@@ -734,11 +734,11 @@ absl::StatusOr<std::unique_ptr<SolverInterface>> MosekSolver::New(const ModelPro
     MSK::put_task_name(mskslv->task,model.name().c_str());
     MSK::append_rows(mskslv->task,1);
     MSK::put_obj_row(mskslv->task,0);
-    OR_RETURN_IF_ERROR(mskslv->AddVariables(model.variables()));
-    OR_RETURN_IF_ERROR(mskslv->ReplaceObjective(model.objective()));
-    OR_RETURN_IF_ERROR(mskslv->AddConstraints(model.linear_constraints(),
+    ABSL_RETURN_IF_ERROR(mskslv->AddVariables(model.variables()));
+    ABSL_RETURN_IF_ERROR(mskslv->ReplaceObjective(model.objective()));
+    ABSL_RETURN_IF_ERROR(mskslv->AddConstraints(model.linear_constraints(),
                                             model.linear_constraint_matrix()));
-    OR_RETURN_IF_ERROR(mskslv->AddIndicatorConstraints(model.indicator_constraints()));
+    ABSL_RETURN_IF_ERROR(mskslv->AddIndicatorConstraints(model.indicator_constraints()));
 
     //absl::StatusOr<std::unique_ptr<SolverInterface>>
     std::unique_ptr<SolverInterface> res(std::move(mskslv));

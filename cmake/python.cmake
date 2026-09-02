@@ -39,7 +39,7 @@ if(UNIX AND NOT APPLE AND NOT (CMAKE_SYSTEM_NAME STREQUAL "OpenBSD"))
     list(APPEND CMAKE_SWIG_FLAGS "-DSWIGWORDSIZE32")
   endif()
 endif()
-list(APPEND CMAKE_SWIG_FLAGS "-DOR_DLL=")
+list(APPEND CMAKE_SWIG_FLAGS "-DOR_DLL=" "-DOR_INIT_DLL=" "-DOR_ROUTING_DLL=")
 
 # Find Python 3
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
@@ -420,6 +420,7 @@ file(COPY
   DESTINATION ${PYTHON_PROJECT_DIR}/sat/colab)
 file(COPY
   ortools/util/python/solve_interrupter.py
+  ortools/util/python/status_streaming.py
   DESTINATION ${PYTHON_PROJECT_DIR}/util/python)
 
 # Adds py.typed to make typed packages.
@@ -512,7 +513,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E
     $<IF:$<BOOL:${BUILD_absl}>,copy,true>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::base>>
-    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::borrowed_fixup_buffer>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::base_cpu_detect>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::city>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::civil_time>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::cord>>
@@ -522,7 +523,6 @@ add_custom_command(
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::cordz_info>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc32c>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc_cord_state>>
-    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc_cpu_detect>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::debugging_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::decode_rust_punycode>>
@@ -543,6 +543,7 @@ add_custom_command(
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::flags_usage>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::flags_usage_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::graphcycles_internal>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::hardening>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::hash>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::hashtablez_sampler>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::int128>>
@@ -577,9 +578,11 @@ add_custom_command(
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::random_seed_sequences>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::raw_hash_set>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::raw_logging_internal>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::source_location>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::spinlock_wait>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::stacktrace>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::status>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::status_builder>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::statusor>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::str_format_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::strerror>>
@@ -649,6 +652,16 @@ add_custom_command(
 
   COMMAND ${CMAKE_COMMAND} -E
     $<IF:${is_ortools_shared},copy,true>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_core>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_core>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_math_opt>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_math_opt>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_packing>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_packing>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_routing>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_routing>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_scheduling>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_scheduling>>
     $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools>>
     $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools>>
     ${PYTHON_PROJECT}/.libs
@@ -675,6 +688,8 @@ add_custom_command(
    $<TARGET_FILE:max_flow_pybind11> ${PYTHON_PROJECT}/graph/python
   COMMAND ${CMAKE_COMMAND} -E copy
    $<TARGET_FILE:min_cost_flow_pybind11> ${PYTHON_PROJECT}/graph/python
+  COMMAND ${CMAKE_COMMAND} -E copy
+   $<TARGET_FILE:dag_shortest_path_pybind11> ${PYTHON_PROJECT}/graph/python
   COMMAND ${CMAKE_COMMAND} -E copy
    $<TARGET_FILE:pywrapcp> ${PYTHON_PROJECT}/constraint_solver
   COMMAND ${CMAKE_COMMAND} -E copy
@@ -726,6 +741,7 @@ add_custom_command(
     linear_sum_assignment_pybind11
     max_flow_pybind11
     min_cost_flow_pybind11
+    dag_shortest_path_pybind11
     pywrapcp
     constraint_solver_pybind11
     pywraprouting

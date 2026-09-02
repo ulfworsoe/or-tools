@@ -159,6 +159,7 @@ rabbits_and_pheasants_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"
 #include "ortools/sat/cp_model.pb.h"
@@ -373,7 +374,6 @@ x=20 expr=60
 # Snippet from ortools/sat/samples/earliness_tardiness_cost_sample_sat.py
 """Encodes a convex piecewise linear function."""
 
-
 from ortools.sat.python import cp_model
 
 
@@ -460,7 +460,7 @@ earliness_tardiness_cost_sample_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
-#include "absl/types/span.h"
+#include "absl/log/log.h"
 #include "ortools/sat/cp_model.h"
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_solver.h"
@@ -901,6 +901,7 @@ step_function_sample_sat()
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "absl/types/span.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"

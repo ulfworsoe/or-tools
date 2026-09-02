@@ -23,7 +23,9 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/log/check.h"
 #include "absl/numeric/int128.h"
+#include "absl/random/bit_gen_ref.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ortools/base/strong_vector.h"
@@ -45,6 +47,7 @@
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
+#include "ortools/sat/sat_solver.h"
 #include "ortools/sat/synchronization.h"
 #include "ortools/sat/util.h"
 #include "ortools/sat/zero_half_cuts.h"
@@ -147,8 +150,7 @@ class LinearProgrammingConstraint : public PropagatorInterface,
   ~LinearProgrammingConstraint() override;
 
   // Add a new linear constraint to this LP.
-  // Return false if we prove infeasibility of the global model.
-  bool AddLinearConstraint(LinearConstraint ct);
+  void AddLinearConstraint(LinearConstraint ct);
 
   // Set the coefficient of the variable in the objective. Calling it twice will
   // overwrite the previous value.
@@ -161,6 +163,9 @@ class LinearProgrammingConstraint : public PropagatorInterface,
     objective_cp_ = ivar;
     objective_cp_is_part_of_lp_ = false;
     for (const IntegerVariable var : integer_variables_) {
+      // TODO(user): it is possible that var == NegationOf(objective_cp_).
+      // Try to handle this case properly, which would remove the need to
+      // be careful with the extra_term in ConvertToLinearConstraint().
       if (var == objective_cp_) {
         objective_cp_is_part_of_lp_ = true;
         break;

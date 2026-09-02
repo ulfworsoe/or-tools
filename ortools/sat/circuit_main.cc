@@ -30,10 +30,12 @@
 #include "ortools/base/init_google.h"
 #include "ortools/base/log_severity.h"
 #include "ortools/base/options.h"
+#include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/sat/gate_utils.h"
 #include "ortools/sat/sat_base.h"
+#include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/util.h"
 #include "ortools/util/filelineiter.h"
 
@@ -44,6 +46,25 @@ ABSL_FLAG(std::string, circuit1, "/tmp/circuit1.bench",
 ABSL_FLAG(std::string, circuit2, "/tmp/circuit2.bench",
           "Circuit B in bench format with only LUT of size 2 and sorted "
           "topologically.");
+
+ABSL_FLAG(bool, decompose, false,
+          "Just decompose the circuit assuming the output is (normal_out, "
+          "debug_out)");
+ABSL_FLAG(int, decompose_num_initial_outputs, 20, "Size of initial output");
+
+ABSL_FLAG(std::string, nway_adder, "",
+          "If non-empty, try to show that the given circuit is equivalent to a "
+          "n-way adder");
+
+ABSL_FLAG(std::string, recover_nway_adder_inputs, "",
+          "If non-empty, try to recover the nodes that can be converted to and "
+          "addition on the output.");
+
+ABSL_FLAG(std::string, dump_prefix, "", "Add as prefix of some dump filename");
+
+ABSL_FLAG(
+    bool, count_common_outputs, false,
+    "If true, display how many output are equivalent between two circuit");
 
 namespace operations_research::sat {
 
@@ -132,6 +153,19 @@ void FixSomeInputs(BinaryCircuit& circuit) {
   }
 }
 
+bool ModelIsInfeasible(const CpModelProto& proto) {
+  LOG(INFO) << "Verifying equivalences with CP-SAT ...";
+  SatParameters params;
+  params.set_num_workers(32);
+  params.set_num_full_subsolvers(32);
+  params.add_subsolvers("no_lp");
+  params.set_inprocessing_dtime_ratio(0.4);
+  params.set_shared_tree_num_workers(0);
+  params.set_log_search_progress(false);
+  const CpSolverResponse response = SolveWithParameters(proto, params);
+  return response.status() == CpSolverStatus::INFEASIBLE;
+}
+
 void OptimizeCircuit(std::string name, BinaryCircuit& circuit) {
   const BinaryCircuit initial_circuit = circuit;
 
@@ -211,20 +245,218 @@ void OptimizeCircuit(std::string name, BinaryCircuit& circuit) {
     BinaryCircuit mitter = ConstructMitter(initial_circuit, circuit);
     std::string filename = absl::StrCat("/tmp/debug_model_", name, ".pb.txt");
     LOG(INFO) << "Dumping to '" << filename << "'";
-    CHECK(WriteModelProtoToFile(ConstructCpModelFromBinaryCircuit(
-                                    mitter, /* enforce_one_output= */ true),
-                                filename));
+
+    const CpModelProto proto =
+        ConstructCpModelFromBinaryCircuit(mitter, /*enforce_one_output*/ true);
+
+    CHECK(WriteModelProtoToFile(proto, filename));
+    CHECK(ModelIsInfeasible(proto));
   }
 }
 
-void Run(std::string filename1, std::string filename2) {
-  BinaryCircuit circuit1 = FromBenchFile(filename1);
-  FixSomeInputs(circuit1);
-  OptimizeCircuit("circuit1", circuit1);
+// From a base circuit (in) -> (out1, out2)
+// We extract a few subcircuits:
+struct CircuitDecomposition {
+  BinaryCircuit goal;             // (in) -> (out1)
+  BinaryCircuit hard;             // (in) -> (out2);
+  BinaryCircuit simplified_goal;  // (in, out2) -> (out1)
+};
+CircuitDecomposition SimplerDecomposition(int num_original_outputs,
+                                          absl::string_view name,
+                                          BinaryCircuit& circuit) {
+  circuit.ResetBooleanMapping();
+  LOG(INFO) << "DECOMPOSING " << circuit.DebugString();
 
+  // Split output in 2.
+  const absl::Span<const int> all_outputs = circuit.outputs;
+  const absl::Span<const int> out1 =
+      all_outputs.subspan(0, num_original_outputs);
+  const absl::Span<const int> out2 = all_outputs.subspan(num_original_outputs);
+  LOG(INFO) << "SIZES " << out1.size() << " " << out2.size();
+
+  // Extract subcircuits.
+  CircuitDecomposition result;
+
+  // Goal.
+  {
+    SubcircuitExtractor extractor(circuit);
+    result.goal = extractor.Extract(out1);
+    OptimizeCircuit(absl::StrCat("goal", name), result.goal);
+  }
+
+  // Hard.
+  {
+    SubcircuitExtractor extractor(circuit);
+    result.hard = extractor.Extract(out2);
+    OptimizeCircuit(absl::StrCat("hard", name), result.hard);
+  }
+
+  // Simplified goal.
+  {
+    BinaryCircuit temp = ConvertInnerNodeToInputs(circuit, out2);
+    SubcircuitExtractor extractor(temp);
+    result.simplified_goal = extractor.Extract(
+        absl::MakeSpan(temp.outputs).subspan(0, num_original_outputs));
+    OptimizeCircuit(absl::StrCat("simplied_goal", name),
+                    result.simplified_goal);
+  }
+
+  return result;
+}
+
+void DumpMitter(absl::string_view name, BinaryCircuit a, BinaryCircuit b,
+                bool verify = false) {
+  a.ResetBooleanMapping();
+  b.ResetBooleanMapping();
+  BinaryCircuit mitter = ConstructMitter(a, b);
+  std::string filename = absl::StrCat("/tmp/mitter_", name, ".pb.txt");
+  LOG(INFO) << "Dumping to '" << filename << "'";
+
+  const CpModelProto proto =
+      ConstructCpModelFromBinaryCircuit(mitter, /* enforce_one_output= */ true);
+  CHECK(WriteModelProtoToFile(proto, filename));
+  if (verify) CHECK(ModelIsInfeasible(proto));
+}
+
+void IsNWayAdder(const BinaryCircuit& circuit) {
+  {
+    // Simple test that our gemini MakeNBitAdder() is correct.
+    const BinaryCircuit adder = MakeNBitAdder(14);
+    CHECK(RecoverNWayAddition(adder));
+  }
+
+  if (RecoverNWayAddition(circuit)) {
+    // TODO(user): Find a faster way to prove this ?
+    // Note that it is just a few seconds per model, so relatively quick.
+    std::vector<BinaryCircuit> models = GetNWayAdditionSubmodels(circuit);
+    for (int i = 0; i < models.size(); ++i) {
+      const CpModelProto proto = ConstructCpModelFromBinaryCircuit(
+          models[i], /*enforce_one_output*/ true);
+
+      std::string filename = absl::StrCat("/tmp/adder_", i, ".pb.txt");
+      LOG(INFO) << "Dumping to '" << filename << "'";
+      CHECK(WriteModelProtoToFile(proto, filename));
+
+      CHECK(ModelIsInfeasible(proto))
+          << "Failed to prove equivalence to N-way adder !";
+    }
+
+    LOG(INFO)
+        << "The given circuit was proven to be equivalent to a N-way adder !";
+    return;
+  }
+
+  LOG(INFO) << "Failed to prove equivalence to N-way adder !";
+}
+
+void Decompose(absl::string_view name, int m, const BinaryCircuit& circuit) {
+  // See if we have an issue, also reconstruct g().
+  if (!SampleDecomposition(m, circuit)) return;
+
+  const BinaryCircuit decompo = ConstructDecomposition(m, circuit);
+  LOG(INFO) << "Decompo " << m << ": " << decompo.DebugString();
+
+  std::string filename = absl::StrCat("/tmp/decompo_", name, "_", m, ".pb.txt");
+  LOG(INFO) << "Dumping to '" << filename << "'";
+  CHECK(WriteModelProtoToFile(
+      ConstructCpModelFromBinaryCircuit(decompo, /*enforce_one_output*/ true),
+      filename));
+}
+
+void Run(std::string filename1, std::string filename2) {
+  if (!absl::GetFlag(FLAGS_nway_adder).empty()) {
+    IsNWayAdder(FromBenchFile(absl::GetFlag(FLAGS_nway_adder)));
+    return;
+  }
+
+  if (!absl::GetFlag(FLAGS_recover_nway_adder_inputs).empty()) {
+    const BinaryCircuit circuit =
+        FromBenchFile(absl::GetFlag(FLAGS_recover_nway_adder_inputs));
+    LOG(INFO) << circuit.DebugString();
+    const auto candidates = SampleForAdditionCandidates(circuit);
+
+    const auto cp_sat_solve = [](const CpModelProto& proto) {
+      SatParameters params;
+      params.set_log_search_progress(false);
+      params.set_catch_sigint_signal(false);
+      params.set_num_workers(16);
+      params.set_num_full_subsolvers(16);
+      params.set_inprocessing_dtime_ratio(0.5);
+      params.add_subsolvers("no_lp");
+      return SolveWithParameters(proto, params);
+    };
+
+    std::string prefix = absl::GetFlag(FLAGS_dump_prefix);
+    if (!prefix.empty()) absl::StrAppend(&prefix, "_");
+
+    auto result = ValidateAdditionCandidates(candidates, circuit, cp_sat_solve);
+    {
+      // This can be used to investigate how much of the adder inputs are in
+      // common.
+      BinaryCircuit setup_circuit = result.reduced_circuit;
+      setup_circuit.outputs.clear();
+      for (const auto [node, unused] : result.input_term_pairs) {
+        setup_circuit.outputs.push_back(node);
+      }
+      setup_circuit.ResetBooleanMapping();
+      OptimizeCircuit(absl::StrCat(prefix, "setup"), setup_circuit);
+    }
+
+    OptimizeCircuit(absl::StrCat(prefix, "final"), result.final_circuit);
+    return;
+  }
+
+  BinaryCircuit circuit1 = FromBenchFile(filename1);
   BinaryCircuit circuit2 = FromBenchFile(filename2);
-  FixSomeInputs(circuit2);
+
+  // Simpler decomposition.
+  if (absl::GetFlag(FLAGS_decompose)) {
+    const int num_initial_outputs =
+        absl::GetFlag(FLAGS_decompose_num_initial_outputs);
+    const CircuitDecomposition decomp1 =
+        SimplerDecomposition(num_initial_outputs, "A", circuit1);
+    const CircuitDecomposition decomp2 =
+        SimplerDecomposition(num_initial_outputs, "B", circuit2);
+
+    DumpMitter("goal", decomp1.goal, decomp2.goal);
+    DumpMitter("simplified_goal", decomp1.simplified_goal,
+               decomp2.simplified_goal, /*verify=*/true);
+    DumpMitter("hard", decomp1.hard, decomp2.hard);
+    return;
+  }
+
+  OptimizeCircuit("circuit1", circuit1);
   OptimizeCircuit("circuit2", circuit2);
+
+  if (absl::GetFlag(FLAGS_count_common_outputs)) {
+    SubcircuitExtractor extract1(circuit1);
+    SubcircuitExtractor extract2(circuit2);
+    const int m = std::min(circuit1.outputs.size(), circuit2.outputs.size());
+    if (circuit1.outputs.size() != circuit2.outputs.size()) {
+      LOG(INFO) << "WARNING: Circuit do not have the same number of outputs, "
+                   "testing only the first ones!";
+    }
+    int num_in_common = 0;
+    for (int k = 0; k < m; ++k) {
+      circuit1.ResetBooleanMapping();
+      circuit2.ResetBooleanMapping();
+      BinaryCircuit a = circuit1;
+      a.outputs = {circuit1.outputs[k]};
+      BinaryCircuit b = circuit2;
+      b.outputs = {circuit2.outputs[k]};
+      BinaryCircuit mitter = ConstructMitter(a, b);
+      const CpModelProto proto = ConstructCpModelFromBinaryCircuit(
+          mitter, /*enforce_one_output=*/true);
+      if (ModelIsInfeasible(proto)) {
+        ++num_in_common;
+        LOG(INFO) << k << " equiv";
+      } else {
+        LOG(INFO) << k << " not_equiv";
+      }
+    }
+    LOG(INFO) << num_in_common << "/" << m << " outputs in common";
+    return;
+  }
 
   BinaryCircuit mitter = ConstructMitter(circuit1, circuit2);
 

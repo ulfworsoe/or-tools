@@ -22,8 +22,10 @@
 #include "absl/time/time.h"
 #include "gtest/gtest.h"
 #include "ortools/base/gmock.h"
+#include "ortools/base/log_severity.h"
 #include "ortools/set_cover/base_types.h"
 #include "ortools/set_cover/set_cover.pb.h"
+#include "ortools/set_cover/set_cover_cft.h"
 #include "ortools/set_cover/set_cover_heuristics.h"
 #include "ortools/set_cover/set_cover_invariant.h"
 #include "ortools/set_cover/set_cover_mip.h"
@@ -140,24 +142,20 @@ TEST(SetCoverProtoTest, SaveReload) {
 TEST(SolutionProtoTest, SaveReloadTwice) {
   SetCoverModel model = KnightsCover(3, 3).model();
   SetCoverInvariant inv(&model);
-  GreedySolutionGenerator greedy(&inv);
-  CHECK(greedy.NextSolution());
+  GreedySolutionOptimizer greedy(&inv);
+  CHECK(greedy.Optimize());
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
   SetCoverSolutionResponse greedy_proto = inv.ExportSolutionAsProto();
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(500).NextSolution());
+  CHECK(steepest.SetMaxIterations(500).Optimize());
   EXPECT_TRUE(inv.CheckConsistency(CL::kRedundancy));
   SetCoverSolutionResponse steepest_proto = inv.ExportSolutionAsProto();
   inv.ImportSolutionFromProto(greedy_proto);
-  CHECK(steepest.SetMaxIterations(500).NextSolution());
+  CHECK(steepest.SetMaxIterations(500).Optimize());
   EXPECT_TRUE(inv.CheckConsistency(CL::kRedundancy));
 }
 
-#ifdef NDEBUG
-static constexpr int SIZE = 128;
-#else
-static constexpr int SIZE = 16;
-#endif
+static constexpr int SIZE = DEBUG_MODE ? 16 : 128;
 
 TEST(SetCoverTest, KnightsCoverCreation) {
   SetCoverModel model = KnightsCover(SIZE, SIZE).model();
@@ -170,19 +168,19 @@ TEST(SetCoverTest, KnightsCoverTrivalAndGreedy) {
   SetCoverInvariant inv(&model);
 
   TrivialSolutionGenerator trivial(&inv);
-  CHECK(trivial.NextSolution());
+  CHECK(trivial.Optimize());
   LOG(INFO) << "TrivialSolutionGenerator cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kCostAndCoverage));
 
   // Reinitialize before using Greedy, to start from scratch.
   inv.Initialize();
-  GreedySolutionGenerator greedy(&inv);
-  CHECK(greedy.NextSolution());
-  LOG(INFO) << "GreedySolutionGenerator cost: " << inv.cost();
+  GreedySolutionOptimizer greedy(&inv);
+  CHECK(greedy.Optimize());
+  LOG(INFO) << "GreedySolutionOptimizer cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100'000).NextSolution());
+  CHECK(steepest.SetMaxIterations(100'000).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
 }
@@ -191,12 +189,12 @@ TEST(SetCoverTest, KnightsCoverGreedy) {
   SetCoverModel model = KnightsCover(SIZE, SIZE).model();
   SetCoverInvariant inv(&model);
 
-  GreedySolutionGenerator greedy(&inv);
-  CHECK(greedy.NextSolution());
-  LOG(INFO) << "GreedySolutionGenerator cost: " << inv.cost();
+  GreedySolutionOptimizer greedy(&inv);
+  CHECK(greedy.Optimize());
+  LOG(INFO) << "GreedySolutionOptimizer cost: " << inv.cost();
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100).NextSolution());
+  CHECK(steepest.SetMaxIterations(100).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
 }
 
@@ -205,22 +203,22 @@ TEST(SetCoverTest, KnightsCoverDegree) {
   SetCoverInvariant inv(&model);
 
   ElementDegreeSolutionGenerator degree(&inv);
-  CHECK(degree.NextSolution());
+  CHECK(degree.Optimize());
   LOG(INFO) << "ElementDegreeSolutionGenerator cost: " << inv.cost();
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100).NextSolution());
+  CHECK(steepest.SetMaxIterations(100).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
 }
 
 TEST(SetCoverTest, KnightsCoverGLS) {
   SetCoverModel model = KnightsCover(SIZE, SIZE).model();
   SetCoverInvariant inv(&model);
-  GreedySolutionGenerator greedy(&inv);
-  CHECK(greedy.NextSolution());
-  LOG(INFO) << "GreedySolutionGenerator cost: " << inv.cost();
+  GreedySolutionOptimizer greedy(&inv);
+  CHECK(greedy.Optimize());
+  LOG(INFO) << "GreedySolutionOptimizer cost: " << inv.cost();
   GuidedLocalSearch gls(&inv);
-  CHECK(gls.SetMaxIterations(100).NextSolution());
+  CHECK(gls.SetMaxIterations(100).Optimize());
   LOG(INFO) << "GuidedLocalSearch cost: " << inv.cost();
 }
 
@@ -230,12 +228,12 @@ TEST(SetCoverTest, KnightsCoverRandom) {
   SetCoverInvariant inv(&model);
 
   RandomSolutionGenerator random(&inv);
-  CHECK(random.NextSolution());
+  CHECK(random.Optimize());
   LOG(INFO) << "RandomSolutionGenerator cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kCostAndCoverage));
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100).NextSolution());
+  CHECK(steepest.SetMaxIterations(100).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
 }
@@ -246,48 +244,40 @@ TEST(SetCoverTest, KnightsCoverTrivial) {
   SetCoverInvariant inv(&model);
 
   TrivialSolutionGenerator trivial(&inv);
-  CHECK(trivial.NextSolution());
+  CHECK(trivial.Optimize());
   LOG(INFO) << "TrivialSolutionGenerator cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kCostAndCoverage));
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100).NextSolution());
+  CHECK(steepest.SetMaxIterations(100).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
 }
 
 TEST(SetCoverTest, KnightsCoverGreedyAndTabu) {
-#ifdef NDEBUG
-  constexpr int BoardSize = 50;
-#else
-  constexpr int BoardSize = 15;
-#endif
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
   KnightsCover knights(BoardSize, BoardSize);
   SetCoverModel model = knights.model();
   SetCoverInvariant inv(&model);
 
-  GreedySolutionGenerator greedy(&inv);
-  CHECK(greedy.NextSolution());
-  LOG(INFO) << "GreedySolutionGenerator cost: " << inv.cost();
+  GreedySolutionOptimizer greedy(&inv);
+  CHECK(greedy.Optimize());
+  LOG(INFO) << "GreedySolutionOptimizer cost: " << inv.cost();
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100).NextSolution());
+  CHECK(steepest.SetMaxIterations(100).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
 
   GuidedTabuSearch gts(&inv);
-  CHECK(gts.SetMaxIterations(1'000).NextSolution());
+  CHECK(gts.SetMaxIterations(1'000).Optimize());
   LOG(INFO) << "GuidedTabuSearch cost: " << inv.cost();
   EXPECT_TRUE(inv.CheckConsistency(CL::kFreeAndUncovered));
   knights.DisplaySolution(inv.is_selected());
 }
 
 TEST(SetCoverTest, KnightsCoverGreedyRandomClear) {
-#ifdef NDEBUG
-  constexpr int BoardSize = 50;
-#else
-  constexpr int BoardSize = 15;
-#endif
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
   KnightsCover knights(BoardSize, BoardSize);
   SetCoverModel model = knights.model();
   SetCoverInvariant inv(&model);
@@ -297,11 +287,11 @@ TEST(SetCoverTest, KnightsCoverGreedyRandomClear) {
     inv.LoadSolution(best_choices);
     ClearRandomSubsets(0.1 * inv.trace().size(), &inv);
 
-    GreedySolutionGenerator greedy(&inv);
-    CHECK(greedy.NextSolution());
+    GreedySolutionOptimizer greedy(&inv);
+    CHECK(greedy.Optimize());
 
     SteepestSearch steepest(&inv);
-    CHECK(steepest.SetMaxIterations(10'000).NextSolution());
+    CHECK(steepest.SetMaxIterations(10'000).Optimize());
 
     if (inv.cost() < best_cost) {
       best_cost = inv.cost();
@@ -338,25 +328,31 @@ TEST(SetCoverTest, KnightsCoverCliqueGuidedLNS) {
     KnightsCover knights(BoardSize, BoardSize);
     SetCoverModel model = knights.model();
     SetCoverInvariant inv(&model);
-    Cost lower_bound = ComputeDualAscentLB(inv, 1000);
+    DualAscentOptimizer dual_ascent(&inv);
+    dual_ascent.SetNumRandomPasses(1000).Optimize();
+    Cost lower_bound = inv.LowerBound();
     LOG(INFO) << "Dual ascent Lower bound: " << lower_bound;
-    Cost lower_bound_full_random = ComputeDualAscentLBFullRandom(inv, 1000);
+    DualAscentOptimizer dual_ascent_full_random(&inv);
+    dual_ascent_full_random.UseFullRandomization(true)
+        .SetNumRandomPasses(1000)
+        .Optimize();
+    Cost lower_bound_full_random = inv.LowerBound();
     LOG(INFO) << "Dual ascent full random Lower bound: "
               << lower_bound_full_random;
     LOG(INFO) << "Lower bound: "
               << std::max(lower_bound, lower_bound_full_random);
     LazyElementDegreeSolutionGenerator degree(&inv);
     degree.SetNumRandomPasses(1000);
-    CHECK(degree.NextSolution());
+    CHECK(degree.Optimize());
     LOG(INFO) << "LazyElementDegreeSolutionGenerator cost: " << inv.cost();
     SteepestSearch steepest(&inv);
-    CHECK(steepest.SetMaxIterations(100).NextSolution());
+    CHECK(steepest.SetMaxIterations(100).Optimize());
     LOG(INFO) << "LazyElementDegreeSolutionGenerator + SteepestSearch cost: "
               << inv.cost();
     CliqueGuidedLNS clique_guided_lns(&inv);
     clique_guided_lns.SetMaxCliqueSize(1000).SetMaxNumCliques(400);
     clique_guided_lns.SetTimeLimit(absl::Milliseconds(500));
-    CHECK(clique_guided_lns.NextSolution());
+    CHECK(clique_guided_lns.Optimize());
     LOG(INFO) << "CliqueGuidedLNS cost (" << BoardSize << " * " << BoardSize
               << "): " << inv.cost() << " / " << best_known_cost[BoardSize]
               << " Time:" << ToInt64Milliseconds(clique_guided_lns.run_time());
@@ -366,11 +362,7 @@ TEST(SetCoverTest, KnightsCoverCliqueGuidedLNS) {
 }
 
 TEST(SetCoverTest, KnightsCoverElementDegreeRandomClear) {
-#ifdef NDEBUG
-  constexpr int BoardSize = 50;
-#else
-  constexpr int BoardSize = 15;
-#endif
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
   KnightsCover knights(BoardSize, BoardSize);
   SetCoverModel model = knights.model();
   SetCoverInvariant inv(&model);
@@ -381,8 +373,8 @@ TEST(SetCoverTest, KnightsCoverElementDegreeRandomClear) {
   std::vector<SetCoverDecision> best_trace;
   ElementToIntVector best_coverage;
   for (int iteration = 0; iteration < 10000; ++iteration) {
-    CHECK(degree.NextSolution());
-    CHECK(steepest.SetMaxIterations(100).NextSolution());
+    CHECK(degree.Optimize());
+    CHECK(steepest.SetMaxIterations(100).Optimize());
 
     if (inv.cost() < best_cost) {
       best_cost = inv.cost();
@@ -407,11 +399,7 @@ TEST(SetCoverTest, KnightsCoverElementDegreeRandomClear) {
 }
 
 TEST(SetCoverTest, KnightsCoverElementDegreeRadiusClear) {
-#ifdef NDEBUG
-  constexpr int BoardSize = 50;
-#else
-  constexpr int BoardSize = 15;
-#endif
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
   KnightsCover knights(BoardSize, BoardSize);
   SetCoverModel model = knights.model();
   SetCoverInvariant inv(&model);
@@ -424,11 +412,11 @@ TEST(SetCoverTest, KnightsCoverElementDegreeRadiusClear) {
   for (int radius = 8; radius >= 1; --radius) {
     for (int row = 0; row < BoardSize; ++row) {
       for (int col = 0; col < BoardSize; ++col) {
-        CHECK(degree.NextSolution());
+        CHECK(degree.Optimize());
         DCHECK(inv.CheckConsistency(CL::kCostAndCoverage));
 
         LazySteepestSearch steepest(&inv);
-        CHECK(steepest.SetMaxIterations(100).NextSolution());
+        CHECK(steepest.SetMaxIterations(100).Optimize());
 
         if (inv.cost() < best_cost) {
           best_cost = inv.cost();
@@ -457,20 +445,16 @@ TEST(SetCoverTest, KnightsCoverElementDegreeRadiusClear) {
 }
 
 TEST(SetCoverTest, DISABLED_KnightsCoverRandomClearMip) {
-#ifdef NDEBUG
-  constexpr int BoardSize = 50;
-#else
-  constexpr int BoardSize = 15;
-#endif
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
   KnightsCover knights(BoardSize, BoardSize);
   SetCoverModel model = knights.model();
   SetCoverInvariant inv(&model);
-  GreedySolutionGenerator greedy(&inv);
-  CHECK(greedy.NextSolution());
-  LOG(INFO) << "GreedySolutionGenerator cost: " << inv.cost();
+  GreedySolutionOptimizer greedy(&inv);
+  CHECK(greedy.Optimize());
+  LOG(INFO) << "GreedySolutionOptimizer cost: " << inv.cost();
 
   SteepestSearch steepest(&inv);
-  CHECK(steepest.SetMaxIterations(100).NextSolution());
+  CHECK(steepest.SetMaxIterations(100).Optimize());
   LOG(INFO) << "SteepestSearch cost: " << inv.cost();
 
   Cost best_cost = inv.cost();
@@ -479,7 +463,7 @@ TEST(SetCoverTest, DISABLED_KnightsCoverRandomClearMip) {
     auto focus = ClearRandomSubsets(0.1 * inv.trace().size(), &inv);
     SetCoverMip mip(&inv);
     mip.UseIntegers(true).SetTimeLimit(absl::Seconds(1));
-    mip.NextSolution(focus);
+    mip.Optimize(focus);
     EXPECT_TRUE(inv.CheckConsistency(CL::kCostAndCoverage));
     if (inv.cost() < best_cost) {
       best_cost = inv.cost();
@@ -493,19 +477,33 @@ TEST(SetCoverTest, DISABLED_KnightsCoverRandomClearMip) {
 }
 
 TEST(SetCoverTest, KnightsCoverMip) {
-#ifdef NDEBUG
-  constexpr int BoardSize = 50;
-#else
-  constexpr int BoardSize = 15;
-#endif
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
   KnightsCover knights(BoardSize, BoardSize);
   SetCoverModel model = knights.model();
   SetCoverInvariant inv(&model);
   SetCoverMip mip(&inv);
   mip.UseIntegers(true).SetTimeLimit(absl::Milliseconds(500));
-  mip.NextSolution();
+  mip.Optimize();
   LOG(INFO) << "Mip cost: " << inv.cost();
   knights.DisplaySolution(inv.is_selected());
+  if (BoardSize == 50) {
+    EXPECT_GE(inv.cost(), 350);
+  }
+}
+
+TEST(SetCoverTest, KnightsCoverCft) {
+  constexpr int BoardSize = DEBUG_MODE ? 15 : 50;
+  KnightsCover knights(BoardSize, BoardSize);
+  SetCoverModel model = knights.model();
+  SetCoverInvariant inv(&model);
+  SetCoverCftOptimizer cft(&inv);
+  cft.params().time_limit = absl::Seconds(10);
+  CHECK(cft.Optimize());
+  LOG(INFO) << "Cft cost: " << inv.cost();
+  LOG(INFO) << "Cft lower bound: " << inv.LowerBound();
+  knights.DisplaySolution(inv.is_selected());
+  EXPECT_TRUE(inv.CheckConsistency(CL::kCostAndCoverage));
+  EXPECT_EQ(inv.num_uncovered_elements(), 0);
   if (BoardSize == 50) {
     EXPECT_GE(inv.cost(), 350);
   }

@@ -69,7 +69,7 @@ class SolutionFloatValue(cp_model.CpSolverSolutionCallback):
         self.__value = self.float_value(self.__expr)
 
     @property
-    def value(self) -> float:
+    def value(self) -> float:  # pyrefly: ignore[bad-override]
         return self.__value
 
 
@@ -982,7 +982,12 @@ class CpModelTest(absltest.TestCase):
                 x,
                 0,
                 [2, 3],
-                [(0, 0, 0), (0, 1, 1), (2, 2), (2, 3, 3)],
+                [
+                    (0, 0, 0),
+                    (0, 1, 1),
+                    (2, 2),
+                    (2, 3, 3),
+                ],  # pyrefly: ignore[bad-argument-type]
             )
         with self.assertRaises(ValueError):
             model.add_automaton(
@@ -2776,6 +2781,18 @@ TRFM"""
         self.assertTrue(hasattr(model_deepcopy, "AddBoolOr"))
         self.assertTrue(hasattr(model_deepcopy, "AddBoolXOr"))
         self.assertTrue(hasattr(model_deepcopy, "AddNoOverlap2D"))
+
+    def test_issue_5301(self):
+        model = cp_model.CpModel()
+        x = model.new_int_var(0, 10, "x")
+        model.add(x >= 5)
+
+        solver = cp_model.CpSolver()
+        # Changing this to 1 works. Any value >= 2 causes a permanent hang.
+        solver.parameters.num_search_workers = 8
+
+        status = solver.solve(model)
+        self.assertEqual(status, cp_model.OPTIMAL)
 
 
 if __name__ == "__main__":

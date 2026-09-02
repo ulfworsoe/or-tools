@@ -157,7 +157,7 @@ public final class VrpSolutionCallback {
 
     // Add Distance constraint.
     // [START distance_constraint]
-    boolean unused = routingModel.addDimension(transitCallbackIndex,
+    routingModel.addDimension(transitCallbackIndex,
         0, // no slack
         3000, // vehicle maximum travel distance
         true, // start cumul to zero

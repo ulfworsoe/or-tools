@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "ortools/sat/enforcement.h"
@@ -31,6 +32,7 @@
 #include "ortools/sat/model.h"
 #include "ortools/sat/precedences.h"
 #include "ortools/sat/sat_base.h"
+#include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/sort.h"
 #include "ortools/util/strong_integers.h"
@@ -749,11 +751,18 @@ bool SchedulingConstraintHelper::PushTaskOrderWhenPresent(int t_before,
 
   const auto [expr, rhs] =
       EncodeDifferenceLowerThan(ends_[t_before], starts_[t_after], 0);
-  const auto status = linear2_bounds_->GetStatus(expr, kMinIntegerValue, rhs);
+  const LinearExpression2Index index = linear2_bounds_->GetIndex(expr);
+  const auto [known_lb, known_ub] =
+      linear2_bounds_->GetBoundsOnCanonicalizedExpression(index, expr);
 
-  if (status == RelationStatus::IS_TRUE) return true;
+  if (known_ub <= rhs) {
+    // A better relation is already known.
+    // Sometime it is not properly propagated though.
+    return linear2_bounds_->MaybePropagate(index, expr, known_ub);
+  }
 
-  if (status == RelationStatus::IS_FALSE) {
+  if (known_lb > rhs) {
+    // This is a conflict.
     LinearExpression2 negated_expr = expr;
     negated_expr.Negate();
     linear2_bounds_->AddReasonForUpperBoundLowerThan(
@@ -780,8 +789,19 @@ bool SchedulingConstraintHelper::PushTaskOrderWhenPresent(int t_before,
   FlagItemAsUsedInReason(t_after);
   RunCallbackIfSet();
 
-  return linear2_bounds_->EnqueueLowerOrEqual(expr, rhs, literal_reason_,
-                                              integer_reason_);
+  if (!linear2_bounds_->EnqueueLowerOrEqual(index, expr, rhs, literal_reason_,
+                                            integer_reason_)) {
+    return false;
+  }
+
+  // TODO(user): Updating the cache right aways seems a bit worse. Do more
+  // investigation.
+  if (/* DISABLES CODE */ (false)) {
+    if (!UpdateCachedValues(t_before)) return false;
+    if (!UpdateCachedValues(t_after)) return false;
+  }
+
+  return true;
 }
 
 bool SchedulingConstraintHelper::ReportConflict() {
@@ -795,6 +815,13 @@ void SchedulingConstraintHelper::WatchAllTasks(int id) {
   // when the helper Propagate() is called. This result in less entries in our
   // watched lists.
   propagator_ids_.push_back(id);
+}
+
+void SchedulingConstraintHelper::Register(PropagatorInterface* propagator,
+                                          int priority) {
+  const int id = watcher_->Register(propagator);
+  watcher_->SetPropagatorPriority(id, priority);
+  WatchAllTasks(id);
 }
 
 void SchedulingConstraintHelper::FlagItemAsUsedInReason(int t) {
@@ -988,7 +1015,10 @@ bool SchedulingDemandHelper::CacheAllEnergyValues() {
 
 IntegerValue SchedulingDemandHelper::DemandMin(int t) const {
   DCHECK_LT(t, demands_.size());
-  return integer_trail_->LowerBound(demands_[t]);
+  // Subtle: in CpModelProto the demand cannot be negative. But when we build
+  // the cumulative relaxation of a no_overlap_2d, sizes of optional intervals
+  // can be negative.
+  return std::max(integer_trail_->LowerBound(demands_[t]), IntegerValue(0));
 }
 
 IntegerValue SchedulingDemandHelper::DemandMax(int t) const {

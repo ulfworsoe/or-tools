@@ -184,7 +184,13 @@ LinearConstraint ScatteredIntegerVector::ConvertToLinearConstraint(
       if (coeff != 0) ++final_size;
     }
   }
-  if (extra_term != std::nullopt) ++final_size;
+  if (extra_term != std::nullopt) {
+    ++final_size;
+    if (!VariableIsPositive(extra_term->first)) {
+      extra_term->first = NegationOf(extra_term->first);
+      extra_term->second = -extra_term->second;
+    }
+  }
 
   // Allocate once.
   LinearConstraint result;
@@ -195,18 +201,36 @@ LinearConstraint ScatteredIntegerVector::ConvertToLinearConstraint(
   if (is_sparse_) {
     std::sort(non_zeros_.begin(), non_zeros_.end());
     for (const glop::ColIndex col : non_zeros_) {
-      const IntegerValue coeff = dense_vector_[col];
+      IntegerValue coeff = dense_vector_[col];
       if (coeff == 0) continue;
       result.vars[new_size] = integer_variables[col.value()];
       result.coeffs[new_size] = coeff;
+
+      // Corner case if the extra term is part of the linear constraint.
+      if (extra_term != std::nullopt &&
+          result.vars[new_size] == extra_term->first) {
+        coeff += extra_term->second;
+        extra_term = std::nullopt;
+        if (coeff == 0) continue;
+      }
+
       ++new_size;
     }
   } else {
     const int size = dense_vector_.size();
     for (glop::ColIndex col(0); col < size; ++col) {
-      const IntegerValue coeff = dense_vector_[col];
+      IntegerValue coeff = dense_vector_[col];
       if (coeff == 0) continue;
       result.vars[new_size] = integer_variables[col.value()];
+
+      // Corner case if the extra term is part of the linear constraint.
+      if (extra_term != std::nullopt &&
+          result.vars[new_size] == extra_term->first) {
+        coeff += extra_term->second;
+        extra_term = std::nullopt;
+        if (coeff == 0) continue;
+      }
+
       result.coeffs[new_size] = coeff;
       ++new_size;
     }
@@ -221,7 +245,8 @@ LinearConstraint ScatteredIntegerVector::ConvertToLinearConstraint(
     ++new_size;
   }
 
-  CHECK_EQ(new_size, final_size);
+  result.num_terms = new_size;
+  CHECK_LE(new_size, final_size);
   DivideByGCD(&result);
   return result;
 }
@@ -398,7 +423,7 @@ LinearProgrammingConstraint::~LinearProgrammingConstraint() {
   shared_stats_->AddStats(stats);
 }
 
-bool LinearProgrammingConstraint::AddLinearConstraint(LinearConstraint ct) {
+void LinearProgrammingConstraint::AddLinearConstraint(LinearConstraint ct) {
   DCHECK(!lp_constraint_is_registered_);
   bool added = false;
   bool folded = false;
@@ -411,21 +436,16 @@ bool LinearProgrammingConstraint::AddLinearConstraint(LinearConstraint ct) {
     const LinearConstraint& new_ct = info.constraint;
     const absl::Span<const IntegerVariable> vars = new_ct.VarsAsSpan();
     if (!info.ub_is_trivial) {
-      if (!linear_propagator_->AddConstraint({}, vars, new_ct.CoeffsAsSpan(),
-                                             new_ct.ub)) {
-        return false;
-      }
+      linear_propagator_->AddConstraint({}, vars, new_ct.CoeffsAsSpan(),
+                                        new_ct.ub);
     }
     if (!info.lb_is_trivial) {
       tmp_vars_.assign(vars.begin(), vars.end());
       for (IntegerVariable& var : tmp_vars_) var = NegationOf(var);
-      if (!linear_propagator_->AddConstraint(
-              {}, tmp_vars_, new_ct.CoeffsAsSpan(), -new_ct.lb)) {
-        return false;
-      }
+      linear_propagator_->AddConstraint({}, tmp_vars_, new_ct.CoeffsAsSpan(),
+                                        -new_ct.lb);
     }
   }
-  return true;
 }
 
 void LinearProgrammingConstraint::RegisterWith(Model* model) {
@@ -2791,7 +2811,27 @@ bool LinearProgrammingConstraint::PropagateExactLpReason() {
                   obj_scale, tmp_cols_, tmp_coeffs_, objective_infinity_norm_));
     CHECK(AddProductTo(-obj_scale, integer_objective_offset_, &rc_ub));
 
+    // This will need to be added to the final constraint.
     extra_term = {objective_cp_, -obj_scale};
+
+    // Corner case if extra_term is actually already in the LP !
+    //
+    // This needs to be fixed otherwise the logic of AdjustNewLinearConstraint()
+    // is just wrong. Even if ConvertToLinearConstraint() properly handle the
+    // case of having objective_cp_ already in the rest of the constraint.
+    if (PositiveVariable(objective_cp_) < mirror_lp_variable_.size()) {
+      const ColIndex col = mirror_lp_variable_[PositiveVariable(objective_cp_)];
+      if (col != glop::kInvalidCol && col < integer_variables_.size() &&
+          integer_variables_[col.value()] == PositiveVariable(objective_cp_)) {
+        extra_term = std::nullopt;
+
+        // Otherwise we should have objective_cp_is_part_of_lp_.
+        CHECK(!VariableIsPositive(objective_cp_));
+        if (!tmp_scattered_vector_.Add(col, obj_scale)) {
+          return true;  // Overflow: abort.
+        }
+      }
+    }
   }
 
   // TODO(user): It seems when the LP as a single variable and the equation is

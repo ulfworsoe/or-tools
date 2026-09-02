@@ -23,6 +23,7 @@
 
 #include "absl/log/check.h"
 #include "ortools/base/mathutil.h"
+#include "ortools/base/types.h"
 
 namespace operations_research::sat {
 
@@ -93,8 +94,7 @@ bool LinearExpression2::CanonicalizeAndUpdateBounds(IntegerValue& lb,
   const bool negated = NegateForCanonicalization();
   if (negated) {
     // We need to be able to negate without overflow.
-    CHECK_GE(lb, kMinIntegerValue);
-    CHECK_LE(ub, kMaxIntegerValue);
+    CHECK_GE(lb, -kint64max);
     std::swap(lb, ub);
     lb = -lb;
     ub = -ub;
@@ -317,6 +317,11 @@ std::pair<IntegerValue, IntegerValue> BestBinaryRelationBounds::GetBounds(
     }
   }
   return {kMinIntegerValue, kMaxIntegerValue};
+}
+
+bool LinearExpression2::operator<(const LinearExpression2& o) const {
+  return std::tie(vars[0], vars[1], coeffs[0], coeffs[1]) <
+         std::tie(o.vars[0], o.vars[1], o.coeffs[0], o.coeffs[1]);
 }
 
 }  // namespace operations_research::sat

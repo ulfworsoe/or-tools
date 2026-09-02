@@ -156,7 +156,7 @@ public final class VrpBreaks {
 
     // Add Time constraint.
     // [START time_constraint]
-    boolean unused = routing.addDimension(transitCallbackIndex, 10, 180,
+    routing.addDimension(transitCallbackIndex, 10, 180,
         true, // start cumul to zero
         "Time");
     Dimension timeDimension = routing.getMutableDimension("Time");

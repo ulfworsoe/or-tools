@@ -153,6 +153,9 @@ SetCoverModel SetCoverModel::GenerateRandomModelFrom(
         ++num_tries;
       } while (num_tries < kMaxTries &&
                subset_already_contains_element[element]);
+      if (subset_already_contains_element[element]) {
+        continue;
+      }
       ++model.num_nonzeros_;
       model.columns_[subset].push_back(element);
       subset_already_contains_element[element] = true;
@@ -194,6 +197,9 @@ SetCoverModel SetCoverModel::GenerateRandomModelFrom(
             ++num_tries;
           } while (num_tries < kMaxTries &&
                    element_already_in_subset[subset_index]);
+          if (element_already_in_subset[subset_index]) {
+            continue;
+          }
           ++model.num_nonzeros_;
           model.columns_[subset_index].push_back(element);
           element_already_in_subset[subset_index] = true;
@@ -350,8 +356,8 @@ void SetCoverModel::CreateSparseRowView() {
   rows_.resize(num_elements_, SparseRow());
   ElementToIntVector row_sizes(num_elements_, 0);
   for (const SubsetIndex subset : SubsetRange()) {
-    MultikeyRadixSort(columns_[subset],
-                      [](const ElementIndex& x) { return x.value(); });
+    RangeRadixSort(0, num_elements_, columns_[subset],
+                   [](const ElementIndex& x) { return x.value(); });
     ElementIndex previous_element(-1);
     for (const ElementIndex element : columns_[subset]) {
       CHECK_GT(element, previous_element)
@@ -361,6 +367,28 @@ void SetCoverModel::CreateSparseRowView() {
       previous_element = element;
     }
   }
+  BaseInt num_uncovered = 0;
+  for (const ElementIndex element : ElementRange()) {
+    if (row_sizes[element] == 0) {
+      ++num_uncovered;
+    }
+  }
+  if (num_uncovered > 0) {
+    has_zero_cost_dummy_column_ = true;
+    SparseColumn dummy_column;
+    dummy_column.reserve(ColumnEntryIndex(num_uncovered));
+    for (const ElementIndex element : ElementRange()) {
+      if (row_sizes[element] == 0) {
+        dummy_column.push_back(element);
+        row_sizes[element] = 1;
+      }
+    }
+    columns_.push_back(dummy_column);
+    subset_costs_.push_back(0.0);
+    ++num_subsets_;
+    UpdateAllSubsetsList();
+  }
+
   for (const ElementIndex element : ElementRange()) {
     rows_[element].reserve(RowEntryIndex(row_sizes[element]));
   }
@@ -381,11 +409,23 @@ void SetCoverModel::CreateSparseColumnView() {
     return;
   }
   VLOG(1) << "CreateSparseColumnView started";
-  columns_.resize(num_subsets_, SparseColumn());
+  BaseInt num_uncovered = 0;
+  for (const ElementIndex element : ElementRange()) {
+    if (rows_[element].empty()) {
+      rows_[element].emplace_back(SubsetIndex(num_subsets_));
+      ++num_uncovered;
+    }
+  }
+  if (num_uncovered > 0) {
+    has_zero_cost_dummy_column_ = true;
+    subset_costs_.push_back(0.0);
+    ++num_subsets_;
+    UpdateAllSubsetsList();
+  }
   SubsetToIntVector column_sizes(num_subsets_, 0);
   for (const ElementIndex element : ElementRange()) {
-    MultikeyRadixSort(rows_[element],
-                      [](const SubsetIndex& x) { return x.value(); });
+    RangeRadixSort(0, num_subsets_, rows_[element],
+                   [](const SubsetIndex& x) { return x.value(); });
     SubsetIndex previous_subset(-1);
     for (const SubsetIndex subset : rows_[element]) {
       CHECK_GT(subset, previous_subset)
@@ -395,6 +435,7 @@ void SetCoverModel::CreateSparseColumnView() {
       previous_subset = subset;
     }
   }
+  columns_.resize(num_subsets_, SparseColumn());
   for (const SubsetIndex subset : SubsetRange()) {
     columns_[subset].reserve(ColumnEntryIndex(column_sizes[subset]));
     for (const ElementIndex element : columns_[subset]) {

@@ -31,10 +31,12 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "ortools/base/strong_vector.h"
 #include "ortools/base/types.h"
+#include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/integer_base.h"
 #include "ortools/sat/lrat_proof_handler.h"
 #include "ortools/sat/model.h"
@@ -118,7 +120,7 @@ class TrivialLiterals {
 // will automatically be fixed on the next restart.
 //
 // Note that for integer literal, we already remove all "stale" entry, however
-// this is still needed to properly update the InitialVariableDomain().
+// this is still needed to properly update the LevelZeroDomain().
 //
 // TODO(user): we should update the initial domain right away, but this as
 // some complication to clean up first.
@@ -616,7 +618,7 @@ class IntegerTrail final : public SatPropagator {
 
   // Returns the initial domain of the given variable. Note that the min/max
   // are updated with level zero propagation, but not holes.
-  const Domain& InitialVariableDomain(IntegerVariable var) const;
+  const Domain& LevelZeroDomain(IntegerVariable var) const;
 
   // Useful for debugging the solver.
   std::string VarDebugString(IntegerVariable var) const;
@@ -663,9 +665,12 @@ class IntegerTrail final : public SatPropagator {
   // Same as above for an affine expression.
   IntegerValue LowerBound(AffineExpression expr) const;
   IntegerValue UpperBound(AffineExpression expr) const;
-  IntegerValue UpperBound(LinearExpression2 expr) const;
   bool IsFixed(AffineExpression expr) const;
   IntegerValue FixedValue(AffineExpression expr) const;
+
+  // And for a LinearExpression2 with non-negative coeffs.
+  IntegerValue LowerBound(const LinearExpression2& expr) const;
+  IntegerValue UpperBound(const LinearExpression2& expr) const;
 
   // Returns the integer literal that represent the current lower/upper bound of
   // the given integer variable.
@@ -692,8 +697,13 @@ class IntegerTrail final : public SatPropagator {
   IntegerValue LevelZeroUpperBound(AffineExpression exp) const;
 
   // Returns globally valid lower/upper bound on the given linear expression.
-  IntegerValue LevelZeroLowerBound(LinearExpression2 expr) const;
-  IntegerValue LevelZeroUpperBound(LinearExpression2 expr) const;
+  // The linear expression must have non-negative coeff, which should almost
+  // always be the case in our codebase.
+  //
+  // TODO(user): consider using another class for the few places where this is
+  // different, so that it can be enforced by the compiler instead.
+  IntegerValue LevelZeroLowerBound(const LinearExpression2& expr) const;
+  IntegerValue LevelZeroUpperBound(const LinearExpression2& expr) const;
 
   // Returns true if the variable is fixed at level 0.
   bool IsFixedAtLevelZero(IntegerVariable var) const;
@@ -1269,6 +1279,9 @@ class IntegerTrail final : public SatPropagator {
   std::vector<SparseBitset<IntegerVariable>*> watchers_;
   std::vector<ReversibleInterface*> reversible_classes_;
 
+  std::vector<Literal> is_valid_tmp_reason_;
+  std::vector<IntegerLiteral> is_valid_tmp_integer_reason_;
+
   mutable int64_t work_done_in_find_indices_ = 0;
 
   mutable Domain temp_domain_;
@@ -1619,15 +1632,25 @@ inline IntegerValue IntegerTrail::UpperBound(AffineExpression expr) const {
   return UpperBound(expr.var) * expr.coeff + expr.constant;
 }
 
-inline IntegerValue IntegerTrail::UpperBound(LinearExpression2 expr) const {
+inline IntegerValue IntegerTrail::LowerBound(
+    const LinearExpression2& expr) const {
   IntegerValue result = 0;
   for (int i = 0; i < 2; ++i) {
-    if (expr.coeffs[i] == 0) {
-      continue;
-    } else if (expr.coeffs[i] > 0) {
-      result += expr.coeffs[i] * UpperBound(expr.vars[i]);
-    } else {
+    DCHECK_GE(expr.coeffs[i], 0);
+    if (expr.coeffs[i] != 0) {
       result += expr.coeffs[i] * LowerBound(expr.vars[i]);
+    }
+  }
+  return result;
+}
+
+inline IntegerValue IntegerTrail::UpperBound(
+    const LinearExpression2& expr) const {
+  IntegerValue result = 0;
+  for (int i = 0; i < 2; ++i) {
+    DCHECK_GE(expr.coeffs[i], 0);
+    if (expr.coeffs[i] != 0) {
+      result += expr.coeffs[i] * UpperBound(expr.vars[i]);
     }
   }
   return result;
@@ -1699,10 +1722,10 @@ inline IntegerValue IntegerTrail::LevelZeroUpperBound(
 }
 
 inline IntegerValue IntegerTrail::LevelZeroLowerBound(
-    LinearExpression2 expr) const {
-  expr.SimpleCanonicalization();
+    const LinearExpression2& expr) const {
   IntegerValue result = 0;
   for (int i = 0; i < 2; ++i) {
+    DCHECK_GE(expr.coeffs[i], 0);
     if (expr.coeffs[i] != 0) {
       result += expr.coeffs[i] * LevelZeroLowerBound(expr.vars[i]);
     }
@@ -1711,10 +1734,10 @@ inline IntegerValue IntegerTrail::LevelZeroLowerBound(
 }
 
 inline IntegerValue IntegerTrail::LevelZeroUpperBound(
-    LinearExpression2 expr) const {
-  expr.SimpleCanonicalization();
+    const LinearExpression2& expr) const {
   IntegerValue result = 0;
   for (int i = 0; i < 2; ++i) {
+    DCHECK_GE(expr.coeffs[i], 0);
     if (expr.coeffs[i] != 0) {
       result += expr.coeffs[i] * LevelZeroUpperBound(expr.vars[i]);
     }

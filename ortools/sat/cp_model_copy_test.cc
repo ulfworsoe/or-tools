@@ -13,17 +13,13 @@
 
 #include "ortools/sat/cp_model_copy.h"
 
-#include <algorithm>
-
 #include "gtest/gtest.h"
 #include "ortools/base/gmock.h"
 #include "ortools/base/parse_test_proto.h"
 #include "ortools/base/protobuf_util.h"
 #include "ortools/linear_solver/linear_solver.pb.h"
 #include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_utils.h"
 #include "ortools/sat/model.h"
-#include "ortools/sat/presolve_context.h"
 #include "ortools/sat/sat_parameters.pb.h"
 
 namespace operations_research {
@@ -205,24 +201,6 @@ TEST(ModelCopyTest, RemoveDuplicateFromEnforcementLiterals) {
   CopyModel(initial_model, &new_cp_model, &model);
   EXPECT_THAT(new_cp_model, EqualsProto(expected_moded));
 }
-
-namespace {
-std::vector<int> ReverseMapping(const std::vector<int>& mapping) {
-  int max_var = 0;
-  for (int lit : mapping) {
-    if (lit == kNoVariableMapping) continue;
-    max_var = std::max(max_var, PositiveRef(lit));
-  }
-  std::vector<int> reverse_mapping(max_var + 1, kNoVariableMapping);
-  for (int i = 0; i < mapping.size(); ++i) {
-    const int mapped = mapping[i];
-    if (mapped == kNoVariableMapping) continue;
-    reverse_mapping[PositiveRef(mapped)] =
-        RefIsPositive(mapped) ? i : NegatedRef(i);
-  }
-  return reverse_mapping;
-}
-}  // namespace
 
 TEST(ModelCopyTest, RemapLiteralsInBoolOr) {
   const CpModelProto initial_model = ParseTestProto(R"pb(

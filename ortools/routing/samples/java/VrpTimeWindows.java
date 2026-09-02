@@ -145,7 +145,7 @@ public class VrpTimeWindows {
 
     // Add Time constraint.
     // [START time_constraint]
-    boolean unused = routing.addDimension(transitCallbackIndex, // transit callback
+    routing.addDimension(transitCallbackIndex, // transit callback
         30, // allow waiting time
         30, // vehicle maximum capacities
         false, // start cumul to zero

@@ -15,16 +15,11 @@ than a single shortest path and
 [Constrained shortest paths](constrained_shortest_path_dag.md) if there are
 additional constraints on the path.
 
-**Undirected** graphs without cycles are trees (or forests, if not connected).
-Any pair of nodes is connected by only a single path (which does not repeat
-nodes), and you can find this by traversing the tree. See
-[Paths in Trees](tree_path.md) for these problems.
-
 ## Shortest path in a DAG
 
 Below, we give an example showing how to solve a shortest path problem on a DAG.
 This example can be found at
-[`dag_simple_shortest_path.cc`](../samples/dag_simple_shortest_path.cc).
+[`dag_simple_shortest_path.cc`](/ortools/graph/samples/dag_simple_shortest_path.cc).
 
 Consider the directed graph below:
 
@@ -45,9 +40,9 @@ digraph d {
 Our goal is to find the shortest path from 0 to 4 (shown in red in the image)
 and its total length.
 
-We solve this using
-[`ShortestPathsOnDag()`](http://cs/symbol:ShortestPathsOnDag) from
-[`dag_shortest_path.h`](http://cs/file:dag_shortest_path.h) below:
+We solve this using `ShortestPathsOnDag()` from
+[`dag_shortest_path.h`](/ortools/graph/dag_shortest_path.h)
+below:
 
 ```cpp
 // Snippet from ortools/graph/samples/dag_simple_shortest_path.cc
@@ -106,17 +101,14 @@ nodes with all arcs reversed, and find the shortest path from $$t$$ to each
 node, and last reverse the paths.
 
 We will now show an example solving this problem using
-[`dag_shortest_path.h`](http://cs/file:dag_shortest_path.h). Unlike the previous
-example, we must use the lower level API of
-[`ShortestPathsOnDagWrapper`](http://cs/symbol:ShortestPathsOnDagWrapper), which
-requires building a
-[`util::StaticGraph`](http://cs/file:google3/ortools/graph_base/graph.h symbol:StaticGraph)
-to get started. (This was done for us by
-[`ShortestPathsOnDag()`](http://cs/symbol:ShortestPathsOnDag) in the above
-examples).
+[`dag_shortest_path.h`](/ortools/graph/dag_shortest_path.h).
+Unlike the previous example, we must use the lower level API of
+`ShortestPathsOnDagWrapper`, which requires building a `util::StaticGraph` from
+[`graph.h`](/ortools/graph_base/graph.h symbol:StaticGraph) to get
+started. (This was done for us by `ShortestPathsOnDag()` in the above examples).
 
 The example below can be found at
-[`dag_shortest_path_one_to_all.cc`](http://cs/file:ortools/graph/samples/dag_shortest_path_one_to_all.cc).
+[`dag_shortest_path_one_to_all.cc`](/ortools/graph/samples/dag_shortest_path_one_to_all.cc).
 
 Consider the directed graph below:
 
@@ -148,7 +140,7 @@ code:
 #include "ortools/base/init_google.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "ortools/base/status_macros.h"
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_join.h"
 #include "ortools/graph/dag_shortest_path.h"
 #include "ortools/graph_base/graph.h"
@@ -175,7 +167,7 @@ absl::Status Main() {
 
   // We need a topological order. We can find it by hand on this small graph,
   // e.g., {0, 1, 2, 3, 4}, but we demonstrate how to compute one instead.
-  OR_ASSIGN_OR_RETURN(const std::vector<int32_t> topological_order,
+  ABSL_ASSIGN_OR_RETURN(const std::vector<int32_t> topological_order,
                         util::graph::FastTopologicalSort(*graph));
 
   operations_research::ShortestPathsOnDagWrapper<util::StaticGraph<>>
@@ -208,10 +200,10 @@ int main(int argc, char** argv) {
 }
 ```
 
-> NOTE :You can use a
-> [`util::ListGraph`](http://cs/file:google3/ortools/graph_base/graph.h symbol:ListGraph)
-> instead of `util::StaticGraph` above, which is simpler as it does not require
-> a `Build()` step and does not permute the edges, but it is slower.
+> NOTE :You can use a `util::ListGraph` from
+> [`graph.h`](/ortools/graph_base/graph.h) instead of `util::StaticGraph`
+> above, which is simpler as it does not require a `Build()` step and does not
+> permute the edges, but it is slower.
 
 Running this code generates the output:
 
@@ -241,7 +233,7 @@ Dijkstra's algorithm (for graphs with nonnegative arc lengths that may contain
 cycles) with one arc removed to make the graph acyclic.
 
 The code for this example can be found at
-[`dag_shortest_path_sequential.cc`](http://cs/file:ortools/graph/samples/dag_shortest_path_sequential.cc).
+[`dag_shortest_path_sequential.cc`](/ortools/graph/samples/dag_shortest_path_sequential.cc).
 
 We have the following DAG:
 

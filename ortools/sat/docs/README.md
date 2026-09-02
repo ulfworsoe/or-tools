@@ -30,7 +30,9 @@ The Python interface to the CP-SAT solver is implemented using two classes.
 ```python
 # Snippet from ortools/sat/samples/simple_sat_program.py
 """Simple solve."""
+
 from ortools.sat.python import cp_model
+
 
 
 def simple_sat_program():
@@ -81,6 +83,7 @@ and some metrics.
 #include "ortools/base/log_severity.h"
 #include "absl/log/check.h"
 #include "absl/log/globals.h"
+#include "absl/log/log.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/sat/cp_model.h"
 #include "ortools/sat/cp_model.pb.h"

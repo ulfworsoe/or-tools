@@ -413,27 +413,40 @@ std::vector<std::string> FindErrorsInRuinRecreateParameters(
   }
 
   for (const auto& ruin : rr.ruin_strategies()) {
-    if (ruin.strategy_case() == RuinStrategy::kSpatiallyCloseRoutes &&
-        ruin.spatially_close_routes().num_ruined_routes() == 0) {
-      errors.emplace_back(
-          "`spatially_close_routes.num_ruined_routes` is 0 (must be > 0)");
-    } else if (ruin.strategy_case() == RuinStrategy::kRandomWalk &&
-               ruin.random_walk().num_removed_visits() == 0) {
-      errors.emplace_back(
-          "`random_walk.num_removed_visits` is 0 (must be > 0)");
-    } else if (ruin.strategy_case() == RuinStrategy::kSisr) {
-      if (ruin.sisr().avg_num_removed_visits() == 0) {
-        errors.emplace_back("`sisr.avg_num_removed_visits` is 0 (must be > 0)");
-      }
-      if (ruin.sisr().max_removed_sequence_size() == 0) {
-        errors.emplace_back(
-            "`sisr.max_removed_sequence_size` is 0 (must be > 0)");
-      }
-      // Using !(...) to catch NaN.
-      if (!(ruin.sisr().bypass_factor() >= 0 &&
-            ruin.sisr().bypass_factor() <= 1)) {
-        errors.emplace_back("`sisr.bypass_factor` is not in [0, 1]");
-      }
+    switch (ruin.strategy_case()) {
+      case RuinStrategy::STRATEGY_NOT_SET:
+        errors.emplace_back("`strategy` is not set");
+        break;
+      case RuinStrategy::kSpatiallyCloseRoutes:
+        if (ruin.spatially_close_routes().num_ruined_routes() == 0) {
+          errors.emplace_back(
+              "`spatially_close_routes.num_ruined_routes` is 0 (must be > 0)");
+        }
+        break;
+      case RuinStrategy::kRandomWalk:
+        if (ruin.random_walk().num_removed_visits() == 0) {
+          errors.emplace_back(
+              "`random_walk.num_removed_visits` is 0 (must be > 0)");
+        }
+        break;
+      case RuinStrategy::kSisr:
+        if (ruin.sisr().avg_num_removed_visits() == 0) {
+          errors.emplace_back(
+              "`sisr.avg_num_removed_visits` is 0 (must be > 0)");
+        }
+        if (ruin.sisr().max_removed_sequence_size() == 0) {
+          errors.emplace_back(
+              "`sisr.max_removed_sequence_size` is 0 (must be > 0)");
+        }
+        // Using !(...) to catch NaN.
+        if (!(ruin.sisr().bypass_factor() >= 0 &&
+              ruin.sisr().bypass_factor() <= 1)) {
+          errors.emplace_back("`sisr.bypass_factor` is not in [0, 1]");
+        }
+        break;
+      case RuinStrategy::kAdaptiveRandomWalk:
+        // Nothing to validate.
+        break;
     }
   }
 
@@ -503,8 +516,15 @@ std::vector<std::string> FindErrorsInIteratedLocalSearchParameters(
                PerturbationStrategy::Value_Name(PerturbationStrategy::UNSET)));
   }
 
-  // TODO(user): Make it invalid to have has_ruin_recreate_parameters and
-  // perturbation_strategy != RUIN_AND_RECREATE.
+  if (ils.perturbation_strategy() != PerturbationStrategy::RUIN_AND_RECREATE &&
+      ils.has_ruin_recreate_parameters()) {
+    errors.emplace_back(
+        StrCat("`ruin_recreate_parameters` is set but "
+               "`perturbation_strategy` is ",
+               PerturbationStrategy::Value_Name(ils.perturbation_strategy())));
+    return errors;
+  }
+
   if (ils.perturbation_strategy() == PerturbationStrategy::RUIN_AND_RECREATE) {
     if (!ils.has_ruin_recreate_parameters()) {
       errors.emplace_back(StrCat("`perturbation_strategy`=",
@@ -555,41 +575,98 @@ std::vector<std::string> FindErrorsInIteratedLocalSearchParameters(
 
     for (const AcceptanceStrategy& acceptance_strategy :
          acceptance_policy.strategies()) {
-      if (acceptance_strategy.has_simulated_annealing()) {
-        const std::string sa_prefix = StrCat(
-            "`", name, "_acceptance_policy.strategies.simulated_annealing.");
-        const SimulatedAnnealingAcceptanceStrategy& sa_params =
-            acceptance_strategy.simulated_annealing();
-
-        if (sa_params.cooling_schedule_strategy() ==
-            CoolingScheduleStrategy::UNSET) {
+      switch (acceptance_strategy.strategy_case()) {
+        case AcceptanceStrategy::STRATEGY_NOT_SET:
           errors.emplace_back(StrCat(
-              "Invalid value for ", sa_prefix, "cooling_schedule_strategy`: ",
-              CoolingScheduleStrategy::Value_Name(
-                  sa_params.cooling_schedule_strategy())));
-        }
+              "`", name, "_acceptance_policy.strategies.strategy` is unset"));
+          break;
+        case AcceptanceStrategy::kSimulatedAnnealing: {
+          const std::string sa_prefix = StrCat(
+              "`", name, "_acceptance_policy.strategies.simulated_annealing.");
+          const SimulatedAnnealingAcceptanceStrategy& sa_params =
+              acceptance_strategy.simulated_annealing();
 
-        if (sa_params.automatic_temperatures()) {
-          if (sa_params.has_initial_temperature() ||
-              sa_params.has_final_temperature()) {
+          if (sa_params.cooling_schedule_strategy() ==
+              CoolingScheduleStrategy::UNSET) {
             errors.emplace_back(StrCat(
-                sa_prefix,
-                ".automatic_temperatures` is true so neither "
-                "`initial_temperature` nor `final_temperature` can be set"));
+                "Invalid value for ", sa_prefix, "cooling_schedule_strategy`: ",
+                CoolingScheduleStrategy::Value_Name(
+                    sa_params.cooling_schedule_strategy())));
           }
-        } else {  // !sa_params.automatic_temperatures().
-          if (!(sa_params.initial_temperature() >=
-                sa_params.final_temperature())) {
+
+          if (sa_params.automatic_temperatures()) {
+            if (sa_params.has_initial_temperature() ||
+                sa_params.has_final_temperature()) {
+              errors.emplace_back(StrCat(
+                  sa_prefix,
+                  ".automatic_temperatures` is true so neither "
+                  "`initial_temperature` nor `final_temperature` can be set"));
+            }
+          } else {  // !sa_params.automatic_temperatures().
+            if (!(sa_params.initial_temperature() >=
+                  sa_params.final_temperature())) {
+              errors.emplace_back(StrCat(
+                  sa_prefix, "initial_temperature` cannot be lower than ",
+                  sa_prefix, "final_temperature`."));
+            }
+
+            if (!(sa_params.final_temperature() >= 1e-9)) {
+              errors.emplace_back(StrCat(
+                  sa_prefix, "final_temperature` cannot be lower than 1e-9."));
+            }
+          }
+          break;
+        }
+        case AcceptanceStrategy::kThresholdAcceptingDeterministicAnnealing: {
+          const std::string ta_prefix =
+              StrCat("`", name,
+                     "_acceptance_policy.strategies.threshold_accepting_"
+                     "deterministic_annealing.");
+          const ThresholdAcceptingDeterministicAnnealingAcceptanceStrategy&
+              ta_params = acceptance_strategy
+                              .threshold_accepting_deterministic_annealing();
+
+          if (ta_params.cooling_schedule_strategy() ==
+              CoolingScheduleStrategy::UNSET) {
+            errors.emplace_back(StrCat(
+                "Invalid value for ", ta_prefix, "cooling_schedule_strategy`: ",
+                CoolingScheduleStrategy::Value_Name(
+                    ta_params.cooling_schedule_strategy())));
+          }
+
+          if (!(ta_params.initial_threshold() >= ta_params.final_threshold())) {
             errors.emplace_back(
-                StrCat(sa_prefix, "initial_temperature` cannot be lower than ",
-                       sa_prefix, "final_temperature`."));
+                StrCat(ta_prefix, "initial_threshold` cannot be lower than ",
+                       ta_prefix, "final_threshold`."));
           }
 
-          if (!(sa_params.final_temperature() >= 1e-9)) {
-            errors.emplace_back(StrCat(
-                sa_prefix, "final_temperature` cannot be lower than 1e-9."));
+          if (!(ta_params.final_threshold() >= 0.0)) {
+            errors.emplace_back(
+                StrCat(ta_prefix, "final_threshold` cannot be negative."));
           }
+          break;
         }
+        case AcceptanceStrategy::kRecordToRecordTravelDeterministicAnnealing: {
+          const std::string rt_prefix =
+              StrCat("`", name,
+                     "_acceptance_policy.strategies.record_to_record_travel_"
+                     "deterministic_annealing.");
+          const RecordToRecordTravelDeterministicAnnealingAcceptanceStrategy&
+              rt_params =
+                  acceptance_strategy
+                      .record_to_record_travel_deterministic_annealing();
+          if (rt_params.deviation() < 0) {
+            errors.emplace_back(
+                StrCat(rt_prefix, "deviation` cannot be negative."));
+          }
+          break;
+        }
+        case AcceptanceStrategy::kGreedyDescent:
+        case AcceptanceStrategy::kAllNodesPerformed:
+        case AcceptanceStrategy::kMoreNodesPerformed:
+        case AcceptanceStrategy::kAbsencesBased:
+          // Nothing to validate.
+          break;
       }
     }
   }

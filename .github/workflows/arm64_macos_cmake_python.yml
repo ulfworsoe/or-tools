@@ -31,13 +31,13 @@ jobs:
     name: arm64•MacOS•CMake(${{matrix.cmake.name}})•Python-${{matrix.python.version}}
     runs-on: macos-latest # macos arm64 based runner
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/remote_cache
         with:
           credentials_json: '${{secrets.GCP_BUCKET_API_KEY}}'
           set_cmake_sccache_launcher: true
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{matrix.python.version}}
       - name: Update Path
@@ -91,4 +91,4 @@ jobs:
     runs-on: ubuntu-latest
     needs: native
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7

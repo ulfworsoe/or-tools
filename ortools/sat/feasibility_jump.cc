@@ -143,15 +143,19 @@ void FeasibilityJumpSolver::ReleaseState() {
 bool FeasibilityJumpSolver::Initialize() {
   const CpModelProto& model_proto = dense_model_.proto();
   LinearModel linear_model(model_proto);
-  // For now we just disable or enable it.
-  // But in the future we might have more variation.
+  std::vector<bool> ignored(model_proto.constraints_size(), false);
+  if (params_.feasibility_jump_linearization_level() != 0) {
+    ignored = linear_model.ignored_constraints();
+  }
+
   if (params_.feasibility_jump_linearization_level() == 0) {
-    evaluator_ =
-        std::make_unique<LsEvaluator>(model_proto, params_, &time_limit_);
+    evaluator_ = std::make_unique<LsEvaluator>(
+        model_proto, params_, ignored, absl::Span<const ConstraintProto>{},
+        &time_limit_);
   } else {
     evaluator_ = std::make_unique<LsEvaluator>(
-        model_proto, params_, linear_model.ignored_constraints(),
-        linear_model.additional_constraints(), &time_limit_);
+        model_proto, params_, ignored, linear_model.additional_constraints(),
+        &time_limit_);
   }
 
   if (time_limit_.LimitReached()) {
@@ -553,7 +557,7 @@ std::function<void()> FeasibilityJumpSolver::GenerateTask(int64_t /*task_id*/) {
       if (SolutionIsFeasible(input_model_proto_, input_solution)) {
         auto pointers = PushAndMaybeCombineSolution(
             shared_response_, input_model_proto_, input_solution,
-            absl::StrCat(name(), "_", state_->options.name(), "(",
+            absl::StrCat(name(), "_", state_->options.name(), " (",
                          OneLineStats(), ")"),
             state_->base_solution);
         // If we pushed a new solution, we use it as a new "base" so that we

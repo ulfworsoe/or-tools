@@ -54,9 +54,9 @@
 #include "ortools/sat/integer_base.h"
 #include "ortools/sat/linear_constraint_manager.h"
 #include "ortools/sat/model.h"
-#include "ortools/sat/presolve_context.h"
 #include "ortools/sat/rins.h"
 #include "ortools/sat/sat_parameters.pb.h"
+#include "ortools/sat/scheduling_model.h"
 #include "ortools/sat/subsolver.h"
 #include "ortools/sat/synchronization.h"
 #include "ortools/sat/util.h"
@@ -68,6 +68,10 @@
 #include "ortools/util/strong_integers.h"
 #include "ortools/util/time_limit.h"
 
+ABSL_FLAG(
+    bool, cp_model_dump_components, false,
+    "DEBUG ONLY. When set to true, dump one file per connected component.");
+
 namespace operations_research {
 namespace sat {
 
@@ -75,14 +79,16 @@ NeighborhoodGeneratorHelper::NeighborhoodGeneratorHelper(
     CpModelProto const* model_proto, SatParameters const* parameters,
     SharedResponseManager* shared_response,
     ModelSharedTimeLimit* global_time_limit, SharedBoundsManager* shared_bounds,
-    SharedClausesManager* shared_clauses)
+    SharedClausesManager* shared_clauses,
+    const SchedulingRelaxation* scheduling_relaxation)
     : SubSolver("neighborhood_helper", HELPER),
       parameters_(*parameters),
       model_proto_(*model_proto),
       shared_bounds_(shared_bounds),
       shared_clauses_(shared_clauses),
       global_time_limit_(global_time_limit),
-      shared_response_(shared_response) {
+      shared_response_(shared_response),
+      scheduling_relaxation_(scheduling_relaxation) {
   // Initialize proto memory.
   local_arena_storage_.assign(Neighborhood::kDefaultArenaSizePerVariable *
                                   model_proto_.variables_size(),
@@ -327,12 +333,32 @@ void NeighborhoodGeneratorHelper::RecomputeHelperData() {
     // them efficiently.
     simplified_model_proto_ =
         google::protobuf::Arena::Create<CpModelProto>(local_arena_.get());
+    absl::flat_hash_set<int> ignored_constraints;
+    if (parameters_.lns_ignore_redundant_constraints() &&
+        scheduling_relaxation_ != nullptr &&
+        scheduling_relaxation_->HasRedundantConstraints()) {
+      for (const auto& problem : scheduling_relaxation_->problems) {
+        for (int c : problem.redundant_cumulative) {
+          ignored_constraints.insert(c);
+        }
+      }
+    }
     ModelCopy copier(simplified_model_proto_, &local_model, mapping);
 
     // When the model is unsat, we abort any update.
     // This shouldn't matter as it should be dealt with elsewhere.
     if (!copier.ImportVariables(model_proto_with_only_variables_)) return;
-    if (!copier.ImportAndSimplifyConstraints(model_proto_)) return;
+    if (ignored_constraints.empty()) {
+      if (!copier.ImportAndSimplifyConstraints(model_proto_)) return;
+    } else {
+      auto active_constraints = [&ignored_constraints](int c) {
+        return !ignored_constraints.contains(c);
+      };
+      if (!copier.ImportAndSimplifyConstraints(
+              model_proto_, /*first_copy=*/false, active_constraints)) {
+        return;
+      }
+    }
     if (!copier.ImportObjective(model_proto_)) return;
     if (!copier.FinishCopy(model_proto_)) return;
   }
@@ -483,6 +509,60 @@ void NeighborhoodGeneratorHelper::RecomputeHelperData() {
   // TODO(user): Do not generate fragment not touching the objective.
   if (!shared_response_->LoggingIsEnabled()) return;
 
+  // Dump each components.
+  if (components_.size() > 1 && absl::GetFlag(FLAGS_cp_model_dump_components)) {
+    absl::SetFlag(&FLAGS_cp_model_dump_components, false);  // only once
+    int component_index = 0;
+    for (const absl::Span<const int> component : components_) {
+      // Some precomputation.
+      int num_in_obj = 0;
+      std::vector<bool> in_compo(num_variables, false);
+      for (const int var : component) {
+        in_compo[var] = true;
+        if (is_in_objective_[var]) num_in_obj++;
+      }
+
+      // Copy the model for dumping.
+      //
+      // The variables indices are the one of the full-model, we rely on
+      // presolve to simplify this to a single component.
+      CpModelProto copy;
+      *copy.mutable_variables() = model_proto_with_only_variables_.variables();
+
+      // Copy only relevant constraints.
+      for (const ConstraintProto& constraint :
+           simplified_model_proto_->constraints()) {
+        bool keep = true;
+        for (const int var : UsedVariables(constraint)) {
+          if (!in_compo[var]) {
+            keep = false;
+            break;
+          }
+        }
+        if (!keep) continue;
+        *copy.add_constraints() = constraint;
+      }
+
+      // Copy objective subpart (without any offset nor scaling though)
+      const auto& vars = simplified_model_proto_->objective().vars();
+      const auto& coeffs = simplified_model_proto_->objective().coeffs();
+      const int num_terms = vars.size();
+      for (int i = 0; i < num_terms; ++i) {
+        if (!in_compo[vars[i]]) continue;
+        copy.mutable_objective()->add_vars(vars[i]);
+        copy.mutable_objective()->add_coeffs(coeffs[i]);
+      }
+
+      std::string filename =
+          absl::StrCat("/tmp/compo_", component_index, ".pb.txt");
+      LOG(INFO) << "Dumping simple component model with " << component.size()
+                << " variables and " << num_in_obj
+                << " objective variable, to '" << filename << "'.";
+      CHECK(WriteModelProtoToFile(copy, filename));
+      ++component_index;
+    }
+  }
+
   std::vector<int> component_sizes;
   for (const absl::Span<const int> component : components_) {
     component_sizes.push_back(component.size());
@@ -622,6 +702,10 @@ NeighborhoodGeneratorHelper::GetActiveRectangles(
     result.no_overlap_2d_constraints = {no_overlap_2d_constraints.begin(),
                                         no_overlap_2d_constraints.end()};
   }
+  absl::c_sort(results, [](const ActiveRectangle& a, const ActiveRectangle& b) {
+    return std::tie(a.x_interval, a.y_interval) <
+           std::tie(b.x_interval, b.y_interval);
+  });
   return results;
 }
 
@@ -2141,6 +2225,7 @@ Neighborhood LocalBranchingLpBasedNeighborhoodGenerator::Generate(
   model.GetOrCreate<TimeLimit>()->ResetLimitFromParameters(*params);
   if (global_time_limit_ != nullptr) {
     global_time_limit_->UpdateLocalLimit(model.GetOrCreate<TimeLimit>());
+    model.GetOrCreate<ModelSharedTimeLimit>()->DisableStop();
   }
 
   // Tricky: we want the inner_objective_lower_bound in the response to be in
@@ -2150,6 +2235,8 @@ Neighborhood LocalBranchingLpBasedNeighborhoodGenerator::Generate(
     local_cp_model.mutable_objective()->set_integer_after_offset(0);
     local_cp_model.mutable_objective()->set_integer_scaling_factor(0);
   }
+
+  local_cp_model.set_name("lb_relax_lns_lp");
 
   // Dump?
   if (absl::GetFlag(FLAGS_cp_model_dump_submodels)) {
@@ -2602,12 +2689,15 @@ Neighborhood RectanglesPackingRelaxOneNeighborhoodGenerator::Generate(
   const int num_to_sample = data.difficulty * all_active_rectangles.size();
   const int num_to_relax = std::min<int>(distances.size(), num_to_sample);
   Rectangle relaxed_bounding_box = center_rect;
-  absl::flat_hash_set<int> boxes_to_relax;
+  std::vector<int> boxes_to_relax;
+  absl::flat_hash_set<int> boxes_to_relax_seen;
   for (int i = 0; i < num_to_relax; ++i) {
     const int rectangle_idx = distances[i].first;
     const ActiveRectangle& rectangle = all_active_rectangles[rectangle_idx];
     relaxed_bounding_box.GrowToInclude(get_rectangle(rectangle));
-    boxes_to_relax.insert(rectangle_idx);
+    if (boxes_to_relax_seen.insert(rectangle_idx).second) {
+      boxes_to_relax.push_back(rectangle_idx);
+    }
   }
 
   // Heuristic: we relax a bit the bounding box in order to allow some
@@ -2745,10 +2835,12 @@ Neighborhood RectanglesPackingRelaxTwoNeighborhoodsGenerator::Generate(
   }
   const int num_to_sample_each =
       data.difficulty * all_active_rectangles.size() / 2;
-  std::sort(distances1.begin(), distances1.end(),
-            [](const auto& a, const auto& b) { return a.second < b.second; });
-  std::sort(distances2.begin(), distances2.end(),
-            [](const auto& a, const auto& b) { return a.second < b.second; });
+  absl::c_stable_sort(distances1, [](const auto& a, const auto& b) {
+    return a.second < b.second;
+  });
+  absl::c_stable_sort(distances2, [](const auto& a, const auto& b) {
+    return a.second < b.second;
+  });
   for (auto& samples : {distances1, distances2}) {
     const int num_potential_samples = samples.size();
     for (int i = 0; i < std::min(num_potential_samples, num_to_sample_each);
@@ -3020,6 +3112,14 @@ Neighborhood RelaxationInducedNeighborhoodGenerator::Generate(
   }
   neighborhood.is_generated = true;
   return neighborhood;
+}
+
+bool NeighborhoodGenerator::SolveData::operator<(const SolveData& o) const {
+  return std::tie(status, difficulty, deterministic_limit, deterministic_time,
+                  initial_best_objective, base_objective, new_objective) <
+         std::tie(o.status, o.difficulty, o.deterministic_limit,
+                  o.deterministic_time, o.initial_best_objective,
+                  o.base_objective, o.new_objective);
 }
 
 }  // namespace sat

@@ -23,6 +23,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"
+#include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
@@ -32,11 +34,16 @@
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/sat/lrat_proof_handler.h"
+#include "ortools/sat/model.h"
 #include "ortools/sat/presolve_context.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
+#include "ortools/sat/solution_crush.h"
 #include "ortools/sat/synchronization.h"
+#include "ortools/util/bitset.h"
+#include "ortools/util/logging.h"
 #include "ortools/util/sorted_interval_list.h"
+#include "ortools/util/strong_integers.h"
 
 namespace operations_research {
 namespace sat {
@@ -150,7 +157,7 @@ class ModelCopyHelper {
   // The domain in the output variable index space.
   std::vector<Domain> mapped_domains_;
 
-  // This is used temporarily to transfrom the hint during copy.
+  // This is used temporarily to transform the hint during copy.
   SolutionCrush solution_crush_;
 
   // Summary of the performed operations.
@@ -214,7 +221,7 @@ class ModelCopy {
   // This allow to be more efficient later in a few preprocessing steps.
   ABSL_MUST_USE_RESULT bool ImportAndSimplifyConstraints(
       const CpModelProto& in_model, bool first_copy = false,
-      std::function<bool(int)> active_constraints = nullptr);
+      const std::function<bool(int)>& active_constraints = nullptr);
 
   // Imports and write the objective.
   ABSL_MUST_USE_RESULT bool ImportObjective(const CpModelProto& in_model);
@@ -363,6 +370,24 @@ class ModelCopy {
 
   int GetTrueMappedLiteral();
 
+  // A positive only index for mapped literals. Useful for storing literals in
+  // bitsets.
+  DEFINE_STRONG_INDEX_TYPE(PositiveOnlyLitIndex);
+
+  PositiveOnlyLitIndex GetPositiveRefIndex(int lit) {
+    return PositiveOnlyLitIndex(PositiveRef(lit) * 2 +
+                                (RefIsPositive(lit) ? 0 : 1));
+  }
+
+  int GetRefFromPositiveIndex(PositiveOnlyLitIndex index) {
+    return (index.value() & 1) ? NegatedRef(index.value() / 2)
+                               : index.value() / 2;
+  }
+
+  PositiveOnlyLitIndex GetMaxIndex() {
+    return PositiveOnlyLitIndex(helper_.MappedDomains().size() * 2);
+  }
+
   ModelCopyHelper helper_;
   const SatParameters& params_;
   SolverLogger* logger_;
@@ -384,8 +409,7 @@ class ModelCopy {
   // These contain mapped literals.
   std::vector<int> temp_enforcement_literals_;
   absl::flat_hash_set<int> temp_enforcement_literals_set_;
-  std::vector<int> temp_literals_;
-  absl::flat_hash_set<int> temp_literals_set_;
+  SparseBitset<PositiveOnlyLitIndex> temp_literals_;
 
   ConstraintProto tmp_constraint_;
 
@@ -451,9 +475,12 @@ class VariableDomains {
 // which can be dynamically updated when new bounds or equivalences are found.
 class DenseModelCopy {
  public:
+  // active_constraints() will be used in the initial copy of the
+  // input_model_proto into the dense model.
   DenseModelCopy(absl::string_view name, const CpModelProto& input_model_proto,
                  SharedBoundsManager* shared_bounds,
-                 SharedClausesManager* shared_clauses);
+                 SharedClausesManager* shared_clauses,
+                 std::function<bool(int)> active_constraints = nullptr);
 
   // The timestamp of the shared bounds and equivalences used to compute this
   // dense model copy.
@@ -492,6 +519,7 @@ class DenseModelCopy {
   const CpModelProto& input_model_proto_;
   SharedClausesManager* shared_clauses_;
   SharedBoundsManager* shared_bounds_;
+  const std::function<bool(int)> active_constraints_;
   const int shared_bounds_id_;
 
   // Timestamps of the data used to compute the fields below.

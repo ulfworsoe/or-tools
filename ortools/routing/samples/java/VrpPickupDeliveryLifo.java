@@ -136,7 +136,7 @@ public class VrpPickupDeliveryLifo {
 
     // Add Distance constraint.
     // [START distance_constraint]
-    boolean unused = routing.addDimension(transitCallbackIndex, // transit callback index
+    routing.addDimension(transitCallbackIndex, // transit callback index
         0, // no slack
         3000, // vehicle maximum travel distance
         true, // start cumul to zero

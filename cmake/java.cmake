@@ -32,7 +32,7 @@ endif()
 if(UNIX AND NOT APPLE)
   list(APPEND CMAKE_SWIG_FLAGS "-DSWIGWORDSIZE64")
 endif()
-list(APPEND CMAKE_SWIG_FLAGS "-DOR_DLL=")
+list(APPEND CMAKE_SWIG_FLAGS "-DOR_DLL=" "-DOR_INIT_DLL=" "-DOR_ROUTING_DLL=")
 
 # Find Java and JNI
 find_package(Java 21 COMPONENTS Development REQUIRED)
@@ -352,7 +352,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E
     $<IF:$<BOOL:${BUILD_absl}>,copy,true>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::base>>
-    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::borrowed_fixup_buffer>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::base_cpu_detect>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::city>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::civil_time>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::cord>>
@@ -362,7 +362,6 @@ add_custom_command(
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::cordz_info>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc32c>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc_cord_state>>
-    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc_cpu_detect>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::crc_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::debugging_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::decode_rust_punycode>>
@@ -383,6 +382,7 @@ add_custom_command(
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::flags_usage>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::flags_usage_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::graphcycles_internal>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::hardening>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::hash>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::hashtablez_sampler>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::int128>>
@@ -417,9 +417,11 @@ add_custom_command(
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::random_seed_sequences>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::raw_hash_set>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::raw_logging_internal>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::source_location>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::spinlock_wait>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::stacktrace>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::status>>
+    $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::status_builder>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::statusor>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::str_format_internal>>
     $<${need_unix_absl_lib}:$<TARGET_SONAME_FILE:absl::strerror>>
@@ -489,6 +491,16 @@ add_custom_command(
 
   COMMAND ${CMAKE_COMMAND} -E
     $<IF:${is_ortools_shared},copy,true>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_core>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_core>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_math_opt>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_math_opt>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_packing>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_packing>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_routing>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_routing>>
+    $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools_scheduling>>
+    $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools_scheduling>>
     $<${need_unix_ortools_lib}:$<TARGET_SONAME_FILE:${PROJECT_NAMESPACE}::ortools>>
     $<${need_windows_ortools_lib}:$<TARGET_FILE:${PROJECT_NAMESPACE}::ortools>>
     ${JAVA_RESSOURCES_PATH}/${JAVA_NATIVE_PROJECT}/

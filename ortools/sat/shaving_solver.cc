@@ -179,6 +179,8 @@ bool ObjectiveShavingSolver::ResetAndSolveModel(int64_t task_id) {
 
   auto* time_limit = local_model_->GetOrCreate<TimeLimit>();
   shared_->time_limit->UpdateLocalLimit(time_limit);
+  // Don't let our shaving model to stop the main solve.
+  local_model_->GetOrCreate<ModelSharedTimeLimit>()->DisableStop();
   time_limit->RegisterSecondaryExternalBooleanAsLimit(&stop_current_chunk_);
 
   auto* random = local_model_->GetOrCreate<ModelRandomGenerator>();
@@ -282,8 +284,7 @@ bool ObjectiveShavingSolver::ResetAndSolveModel(int64_t task_id) {
 }
 
 VariablesShavingSolver::VariablesShavingSolver(
-    const SatParameters& local_parameters, NeighborhoodGeneratorHelper* helper,
-    SharedClasses* shared)
+    const SatParameters& local_parameters, SharedClasses* shared)
     : SubSolver(local_parameters.name(), INCOMPLETE),
       local_params_(local_parameters),
       shared_(shared),
@@ -688,6 +689,7 @@ bool VariablesShavingSolver::ResetAndSolveModel(int64_t task_id, State* state,
 
   auto* time_limit = local_model->GetOrCreate<TimeLimit>();
   shared_->time_limit->UpdateLocalLimit(time_limit);
+  local_model->GetOrCreate<ModelSharedTimeLimit>()->DisableStop();
   time_limit->RegisterSecondaryExternalBooleanAsLimit(&stop_current_chunk_);
   time_limit->ChangeDeterministicLimit(
       time_limit->GetElapsedDeterministicTime() +

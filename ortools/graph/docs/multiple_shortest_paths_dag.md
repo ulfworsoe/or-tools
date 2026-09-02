@@ -28,7 +28,7 @@ longest paths problems as well!
 
 Below, we give an example showing how to solve a multiple shortest paths problem
 on a DAG. This example can be found at
-[`dag_simple_multiple_shortest_paths.cc`](../samples/dag_simple_multiple_shortest_paths.cc).
+[`dag_simple_multiple_shortest_paths.cc`](/ortools/graph/samples/dag_simple_multiple_shortest_paths.cc).
 Consider the directed graph below:
 
 ```dot
@@ -50,7 +50,7 @@ center is the best with length 2, and the bolded blue path on the left is second
 best with length 3.
 
 We solve this using `KShortestPathsOnDag()` from
-[`dag_shortest_path.h`](http://cs/ortools/graph/dag_shortest_path.h)
+[`dag_shortest_path.h`](/ortools/graph/dag_shortest_path.h)
 below:
 
 ```cpp
@@ -115,14 +115,14 @@ the same nodes with all arcs reversed, and find the k-shortest paths from $$t$$
 to each node, and last reverse the paths.
 
 We will now show an example solving this problem using
-[`dag_shortest_path.h`](http://cs/ortools/graph/dag_shortest_path.h).
+[`dag_shortest_path.h`](/ortools/graph/dag_shortest_path.h).
 Unlike the previous example, we must use the lower level API of
 `KShortestPathsOnDagWrapper`, which requires building a
-[`util::StaticGraph`](http://cs/google3/ortools/graph_base/graph.h) to get started.
+[`util::StaticGraph`](/ortools/graph_base/graph.h) to get started.
 (This was done for us by `KShortestPathsOnDag()` in the above examples).
 
 The example below can be found at
-[`dag_multiple_shortest_paths_one_to_all.cc`](../samples/dag_multiple_shortest_paths_one_to_all.cc).
+[`dag_multiple_shortest_paths_one_to_all.cc`](/ortools/graph/samples/dag_multiple_shortest_paths_one_to_all.cc).
 
 Consider the directed graph below:
 
@@ -153,7 +153,7 @@ have only one path from 0). We write the code:
 #include "ortools/base/init_google.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
-#include "ortools/base/status_macros.h"
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_join.h"
 #include "ortools/graph/dag_shortest_path.h"
 #include "ortools/graph_base/graph.h"
@@ -183,7 +183,7 @@ absl::Status Main() {
 
   // We need a topological order. We can find it by hand on this small graph,
   // e.g., {0, 1, 2, 3, 4}, but we demonstrate how to compute one instead.
-  OR_ASSIGN_OR_RETURN(const std::vector<int32_t> topological_order,
+  ABSL_ASSIGN_OR_RETURN(const std::vector<int32_t> topological_order,
                         util::graph::FastTopologicalSort(*graph));
 
   operations_research::KShortestPathsOnDagWrapper<util::StaticGraph<>>
@@ -222,9 +222,10 @@ int main(int argc, char** argv) {
 }
 ```
 
-> NOTE :You can use a [`util::ListGraph`](http://cs/google3/ortools/graph_base/graph.h)
-> instead of `util::StaticGraph` above, which is simpler as it does not require
-> a `Build()` step and does not permute the edges, but it is slower.
+> NOTE :You can use a `util::ListGraph` from
+> [`graph.h`](/ortools/graph_base/graph.h) instead of `util::StaticGraph`
+> above, which is simpler as it does not require a `Build()` step and does not
+> permute the edges, but it is slower.
 
 Running this code generates the output:
 
@@ -255,7 +256,7 @@ the topological sort, which is also $$O(|N| + |A|)$$), and avoid most memory
 allocations. Below, we give an example of how to do this.
 
 The code for this example can be found at
-[`dag_multiple_shortest_paths_sequential.cc`](../samples/dag_multiple_shortest_paths_sequential.cc).
+[`dag_multiple_shortest_paths_sequential.cc`](/ortools/graph/samples/dag_multiple_shortest_paths_sequential.cc).
 
 We have the following DAG:
 

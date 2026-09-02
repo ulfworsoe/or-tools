@@ -25,6 +25,7 @@
 #include "ortools/base/gmock.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_base.h"
+#include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/strong_integers.h"
 
@@ -405,26 +406,6 @@ TEST(BinaryImplicationGraphTest, DetectEquivalencePropagateThings) {
   EXPECT_TRUE(graph->AddAtMostOne(Literals({-4, -1, +2, +3})));
   EXPECT_TRUE(graph->AddAtMostOne(Literals({-3, -1, +2, +4})));
   EXPECT_TRUE(graph->DetectEquivalences());
-}
-
-void TryAmoEquivalences(absl::Span<const std::vector<int>> cliques) {
-  Model model;
-  auto* trail = model.GetOrCreate<Trail>();
-  auto* graph = model.GetOrCreate<BinaryImplicationGraph>();
-  trail->Resize(1000);
-  graph->Resize(1000);
-  for (const auto& clique : cliques) {
-    std::vector<Literal> literals;
-    for (const int i : clique) {
-      literals.push_back(Literal(i));
-    }
-    if (!graph->AddAtMostOne(literals)) {
-      return;
-    }
-  }
-
-  // This can be either false or true since this is a fuzzer test.
-  (void)graph->DetectEquivalences();
 }
 
 }  // namespace
