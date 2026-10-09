@@ -24,6 +24,7 @@ import "ortools/math_opt/solvers/gurobi.proto";
 import "ortools/math_opt/solvers/highs.proto";
 import "ortools/math_opt/solvers/osqp.proto";
 import "ortools/math_opt/solvers/xpress.proto";
+import "ortools/math_opt/solvers/mosek.proto";
 import "ortools/pdlp/solvers.proto";
 import "ortools/sat/sat_parameters.proto";
 

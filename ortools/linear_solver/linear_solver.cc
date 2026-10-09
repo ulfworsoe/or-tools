@@ -94,6 +94,7 @@ bool SolverTypeIsMip(MPModelRequest::SolverType solver_type) {
     case MPModelRequest::HIGHS_LINEAR_PROGRAMMING:
     case MPModelRequest::XPRESS_LINEAR_PROGRAMMING:
     case MPModelRequest::CPLEX_LINEAR_PROGRAMMING:
+    case MPModelRequest::MOSEK_LINEAR_PROGRAMMING:
       return false;
 
     case MPModelRequest::SCIP_MIXED_INTEGER_PROGRAMMING:
@@ -105,6 +106,7 @@ bool SolverTypeIsMip(MPModelRequest::SolverType solver_type) {
     case MPModelRequest::HIGHS_MIXED_INTEGER_PROGRAMMING:
     case MPModelRequest::XPRESS_MIXED_INTEGER_PROGRAMMING:
     case MPModelRequest::CPLEX_MIXED_INTEGER_PROGRAMMING:
+    case MPModelRequest::MOSEK_MIXED_INTEGER_PROGRAMMING:
       return true;
   }
   LOG(DFATAL) << "Invalid SolverType: " << solver_type;
