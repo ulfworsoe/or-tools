@@ -11,7 +11,7 @@
 namespace operations_research::MSK12 {
 
 
-#ifdef WIN32
+#ifdef _WIN32
     #include <libloaderapi.h>
     static const char * libname = "mosekstable12.dll";
     static const char * platformname = "win64x86";
@@ -307,7 +307,7 @@ int library_initialized() {
 }
 
 int initialize_library() {
-    libmosek_handle = dlopen(libname, RTLD_NOW);
+    libmosek_handle = LOADLIBRARY(libname);
     if (!libmosek_handle) return 1;
 
     if (! loadsym(get_callback_code_name,libmosek_handle,"MSK12_get_callback_code_name")) goto ERROR;
@@ -565,4 +565,4 @@ ERROR:
 SUCCESS:
     return 0;
 }
-} // namespace operations_research::MSK{vmajor}
+} // namespace operations_research::MSK12
